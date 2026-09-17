@@ -1,0 +1,70 @@
+{{- if .Values.conversionWebhook.enabled }}
+---
+# Phase 6a.2 — cert-manager Certificate for the TalonRoute CRD
+# conversion webhook. SAN must match the Service DNS name the CRD's
+# spec.conversion.webhook.clientConfig.service points at (see
+# crds/talonroute.yaml conversion stanza).
+#
+# Renewal: cert-manager renews automatically at 2/3 of the duration.
+# If renewal stalls, the live cert continues to serve until expiry —
+# AlertManager rules (CertificateExpiringSoon, CertificateExpiringCritical
+# in <gitops-bootstrap-repo> addons/base/prometheus-alerts/platform-alerts.yaml)
+# fire at 14d/3d before expiry so on-call has lead time.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: talon-conversion-webhook
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app.kubernetes.io/name: talon
+    app.kubernetes.io/part-of: hexxlock-platform
+    app.kubernetes.io/component: identity-aware-proxy
+spec:
+  secretName: talon-conversion-webhook-tls
+  # commonName is REQUIRED by the production example-tenant
+  # ClusterIssuer (Vault PKI role pki_root/sign/<role> with
+  # require_cn=true; verified live 2026-06-01 against
+  # talon-talon-tls which has commonName: internal.example.com).
+  # Without it, cert-manager retries with "the common_name field
+  # is required" and the Secret never materialises.
+  commonName: talon-conversion-webhook.{{ .Release.Namespace }}.svc
+  dnsNames:
+    - talon-conversion-webhook.{{ .Release.Namespace }}.svc
+    - talon-conversion-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  duration: 720h    # 30d
+  renewBefore: 360h # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    kind: {{ .Values.conversionWebhook.issuer.kind | quote }}
+    name: {{ .Values.conversionWebhook.issuer.name | quote }}
+---
+# Service that fronts the in-pod conversion webhook listener
+# (:9443 by default — see TALON_LISTEN_CONVERSION_WEBHOOK in
+# Deployment env). kube-apiserver POSTs ConversionReview to
+# https://talon-conversion-webhook.<ns>.svc:443/convert.
+#
+# Targets the same talon pod selector as the main Service so existing
+# replicas serve the webhook without a dedicated workload — saves
+# the per-pod overhead of running two binaries.
+apiVersion: v1
+kind: Service
+metadata:
+  name: talon-conversion-webhook
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app.kubernetes.io/name: talon
+    app.kubernetes.io/part-of: hexxlock-platform
+    app.kubernetes.io/component: identity-aware-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: talon
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: {{ .Values.conversionWebhook.port }}
+      protocol: TCP
+{{- end }}

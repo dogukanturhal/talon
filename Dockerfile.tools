@@ -1,0 +1,166 @@
+# syntax=docker/dockerfile:1.7
+#
+# Talon tools image — small alpine-based image with `zed` (SpiceDB CLI) +
+# `linkerd-await` baked in for in-cluster operations Jobs (the SpiceDB
+# schema/relationship seed Job is the first user).
+#
+# Tier-1 supply-chain notes:
+#  - `zed` is built FROM SOURCE in this image (not pulled as a prebuilt
+#    binary) so we control the Go toolchain version. authzed's release
+#    binaries are compiled with whatever Go version their CI was on at
+#    tag time — when stdlib CVEs land (e.g. 2026-05-12 wave:
+#    CVE-2026-33811/33814/39820/39836/42499, all fixed in Go 1.25.10 /
+#    1.26.3), prebuilt zed binaries stay vulnerable until authzed cuts
+#    a new release. Building from source decouples our supply-chain
+#    posture from authzed's release cadence: any Go patch release we
+#    can pull is automatically applied to zed on the next image build.
+#  - `linkerd-await` is a one-shot Rust binary with no Go stdlib
+#    exposure; staying on the upstream-signed release is appropriate.
+#    SHA-256-pinned to defeat tampering.
+#  - Final stage is alpine 3.22 because the seed script needs a POSIX
+#    shell. Distroless would be smaller but the multi-zed-call shell is
+#    cleaner than reinventing it as multiple Pods.
+#
+# Built + cosign-signed by .gitlab-ci.yml `build:tools` paralleling
+# `build:talon`. Pushed to ghcr.io/dogukanturhal/talon/tools:<git-sha>.
+
+ARG ALPINE_VERSION=3.22
+# GO_VERSION is MAJOR.MINOR (not a pinned patch) so golang:1.26-alpine resolves
+# to the latest published 1.26.x — matching Dockerfile (talon) and this file's
+# own intent that any Go patch release is automatically applied to zed on the
+# next build. Pinning an exact patch (was 1.26.4) left the zed binary's Go
+# stdlib exposed to CVE-2026-39822 (os.Root symlink escape, fixed in 1.26.5),
+# tripping the THRESHOLD=0 scan gate. The zed SOURCE stays SHA-pinned below.
+ARG GO_VERSION=1.26
+
+# ---------------------------------------------------------------------------
+# Stage 1 — build zed from source with a patched Go toolchain.
+#
+# Pinned to the v1.1.1 commit SHA (3432bf7…) rather than the floating
+# tag so a re-tag upstream cannot silently change what we build. Bump
+# the SHA + version arg together when upgrading zed.
+# ---------------------------------------------------------------------------
+FROM mirror.gcr.io/library/golang:${GO_VERSION}-alpine AS zed-build
+
+ARG ZED_VERSION=v1.1.1
+ARG ZED_COMMIT_SHA=3432bf7f6651ac61c3533b4123e3a171535329e4
+
+RUN apk add --no-cache git ca-certificates
+
+# Single RUN — combines clone, SHA-pin verify, build, and cleanup so the
+# kaniko layer snapshot only sees /out/zed at commit time. Splitting these
+# across multiple RUN commands made the layer snapshot include the full
+# Go module cache (~600MB for zed's deps) + the build cache + the cloned
+# source, which OOM-killed kaniko's snapshot phase on the standard CI
+# runner (live repro 2026-05-12 pipeline 6044 build:tools exit 137 during
+# "Taking snapshot of full filesystem"). Cleanup at the end of the same
+# layer is the canonical kaniko pattern for memory-bounded multi-stage Go
+# builds — the layer'\''s working filesystem is only what survives the RUN.
+#
+# CGO disabled → pure-static musl binary that runs in the alpine runtime
+# stage without libc surprises.
+WORKDIR /src
+RUN set -eux \
+ && git clone --depth 64 --branch ${ZED_VERSION} https://github.com/authzed/zed.git . \
+ && actual="$(git rev-parse HEAD)" \
+ && if [ "$actual" != "${ZED_COMMIT_SHA}" ]; then \
+        echo "FATAL: zed ${ZED_VERSION} HEAD is ${actual}, expected ${ZED_COMMIT_SHA} (upstream re-tagged?)"; \
+        exit 1; \
+    fi \
+ && : "CVE remediation — zed v1.1.1 pins vulnerable transitive deps: golang.org/x/" \
+ && : "crypto <0.52.0 (9 HIGH), golang.org/x/net <0.55.0 (4 HIGH), google.golang.org/" \
+ && : "grpc v1.80.0 (1 HIGH, GHSA-hrxh-6v49-42gf), and golang.org/x/text <0.39.0" \
+ && : "(1 HIGH, CVE-2026-56852 — added 2026-08-05; talon's own go.mod bump cleared" \
+ && : "scan:talon but NOT scan:tools, because zed is built from ITS OWN go.mod here)." \
+ && : "Bump them here (same spirit as patching zed's Go toolchain) so build:tools" \
+ && : "clears the THRESHOLD=0 Harbor gate." \
+ && : "2026-09-05 — pipeline 13155 scan:tools failed HIGH=3 CRITICAL=1 against the" \
+ && : "previous set: CRITICAL CVE-2026-56854 (x/crypto <0.55.0, source-address" \
+ && : "restriction enforced only on the public-key callbacks), HIGH CVE-2026-84304" \
+ && : "(grpc <1.83.1, fragmented HTTP/2 DATA frames each kept as their own recvMsg)," \
+ && : "and HIGH CVE-2026-56864 + CVE-2026-56865 in golang.org/x/mod. x/mod was never" \
+ && : "pinned here — it arrived at v0.37.0 transitively — so it needs its own floor." \
+ && : "These five are a COUPLED SET, not independent floors — go get refuses a" \
+ && : "self-contradictory pin rather than choosing for you, so raising one forces" \
+ && : "the others. Measured, not reasoned: pinning x/mod@0.40.0 while holding" \
+ && : "x/net@0.57.0 fails outright: x/mod@v0.40.0 indirectly requires" \
+ && : "golang.org/x/net@v0.58.0. Each floor is >= its own CVE fix version" \
+ && : "(crypto 0.56.0, net 0.55.0, grpc 1.83.2, text 0.39.0, mod 0.40.0) so every" \
+ && : "earlier finding stays covered." \
+ && : "Resolved and BUILT against the pinned zed SHA before committing, then the" \
+ && : "module versions read back OUT of the resulting binary — that embedded" \
+ && : "buildinfo is what Trivy actually scans, so it is the only reading that" \
+ && : "answers the question the gate asks. Confirmed: crypto v0.56.0 / mod v0.40.0" \
+ && : "/ net v0.58.0 / text v0.41.0 / grpc v1.83.2." \
+ && : "Left alone deliberately: google/cel-go v0.27.0 (GHSA-gcjh-h69q-9w9g) is" \
+ && : "Medium, and jackc/pgx, authzed/spicedb and redis/go-redis findings are Low." \
+ && : "The gate is HIGH/CRITICAL=0; bumping under it is unrequested scope." \
+ && GOFLAGS=-mod=mod go get golang.org/x/crypto@v0.56.0 golang.org/x/net@v0.58.0 google.golang.org/grpc@v1.83.2 golang.org/x/text@v0.41.0 golang.org/x/mod@v0.40.0 \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS=-mod=mod \
+    go build -trimpath \
+      -ldflags="-s -w -X github.com/authzed/zed/internal/version.Version=${ZED_VERSION#v}" \
+      -o /out/zed ./cmd/zed \
+ && /out/zed version 2>&1 | head -1 \
+ && rm -rf /src /root/.cache/go-build /go/pkg/mod \
+ && mkdir -p /src
+
+# ---------------------------------------------------------------------------
+# Stage 2 — fetch linkerd-await (Rust binary; SHA-pinned upstream release).
+# ---------------------------------------------------------------------------
+FROM mirror.gcr.io/library/alpine:${ALPINE_VERSION} AS fetch
+
+RUN apk add --no-cache curl ca-certificates
+
+ARG LINKERD_AWAIT_VERSION=v0.3.3
+ARG LINKERD_AWAIT_SHA256=d23288382f895e2295287625e7e201c1015d741d3fd8b501850abcd61f7b8e24
+
+RUN curl -sSfL -o /tmp/linkerd-await \
+      "https://github.com/linkerd/linkerd-await/releases/download/release/${LINKERD_AWAIT_VERSION}/linkerd-await-${LINKERD_AWAIT_VERSION}-amd64" \
+ && echo "${LINKERD_AWAIT_SHA256}  /tmp/linkerd-await" | sha256sum -c - \
+ && chmod +x /tmp/linkerd-await
+
+# ---------------------------------------------------------------------------
+# Stage 3 — runtime: alpine + the two binaries + a non-root user.
+# ---------------------------------------------------------------------------
+FROM mirror.gcr.io/library/alpine:${ALPINE_VERSION} AS runtime
+
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="talon-tools" \
+      org.opencontainers.image.description="zed + linkerd-await for Talon in-cluster operations Jobs" \
+      org.opencontainers.image.source="https://github.com/dogukanturhal/talon" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="proprietary"
+
+# Pull the latest 3.22.x patch packages BEFORE installing extras so
+# CVE fixes that landed in alpine after our base-image tag (e.g. the
+# OpenSSL 3.5.6 → 3.5.7 bump for CVE-2026-45447 in libcrypto3 +
+# libssl3 — caught live 2026-06-14 by Harbor Trivy scan) get applied
+# automatically on every rebuild without us having to chase a new
+# numbered base image tag for every CVE wave.
+#
+# `apk -U upgrade --no-cache` refreshes the package index then upgrades
+# every installed package to the newest available in the same 3.22
+# branch. Distroless-style images can't do this; we're on alpine
+# specifically to retain `apk` for this exact reason (see header).
+RUN apk -U upgrade --no-cache \
+ && apk add --no-cache ca-certificates
+
+COPY --from=zed-build /out/zed              /usr/local/bin/zed
+COPY --from=fetch     /tmp/linkerd-await    /usr/local/bin/linkerd-await
+
+# Distroless-style non-root user (uid 65532).
+RUN addgroup -g 65532 -S nonroot \
+ && adduser  -u 65532 -S -D -G nonroot -h /home/nonroot nonroot
+USER 65532:65532
+
+# No ENTRYPOINT — callers set `command:` + `args:` explicitly. The
+# linkerd-await binary stays in the image (consumers can opt in via
+# their own ENTRYPOINT override), but the seed Job uses a more
+# explicit pattern: shell script ends with `wget POST /shutdown` to
+# the linkerd-proxy admin port, which is direct and observable in
+# the script logs (vs. linkerd-await's wrapper magic). zed is on PATH
+# at /usr/local/bin/zed.

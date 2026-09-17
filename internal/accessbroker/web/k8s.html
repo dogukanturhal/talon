@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!--
+  Talon clientless kubectl terminal (ADR 0044 Phase 4).
+
+  Reuses the SAME dumb xterm.js client shape as the SSH terminal
+  (index.html) — the k8s exec/logs stream is brokered as a byte stream
+  (internal/accessbroker reuses runRelay), so the browser is identical: it
+  opens the broker WebSocket at /access/k8s, sends keystrokes as base64 in a
+  JSON {"type":"input"} envelope, renders the binary output frames, and
+  reports resizes. The browser interprets NO k8s protocol — jess (via the
+  broker) owns the SPDY/exec stream + the WORM recording.
+
+  xterm.js is loaded from a pinned, SRI-checked CDN URL (vendor the assets
+  next to this file for air-gapped access zones — they are embedded too).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HexxLock Access — kubectl</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"
+    integrity="sha384-jZjwHYpQg/MK7eFcSbXFFqJ9zN1JKfBz3K3Z2vUE1wYrXJ4o0nT2u8C9o0o0bQy"
+    crossorigin="anonymous"
+  />
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e14; color: #c9d1d9; font-family: ui-monospace, monospace; }
+    #status { padding: 6px 10px; font-size: 13px; background: #161b22; border-bottom: 1px solid #21262d; }
+    #status.ok { color: #3fb950; }
+    #status.err { color: #f85149; }
+    #term { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; padding: 4px; }
+  </style>
+</head>
+<body>
+  <div id="status">connecting…</div>
+  <div id="term"></div>
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"
+    integrity="sha384-Hh1aF0bq1aZ4Q2ZB9o4qPRqWvqzZ8b2Y9w8sQ6cFh5jY6p6Yk6q9aE3kE0w5tL"
+    crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ''; }
+
+      // Carry the k8s target selection from the page URL into the broker
+      // WebSocket query string. The broker's K8sTargetResolver reads
+      // ?verb=&cluster=&namespace=&pod=&container=&command= in the scaffold.
+      const pageParams = new URLSearchParams(window.location.search);
+      const term = new window.Terminal({ cursorBlink: true, fontSize: 14, theme: { background: '#0b0e14' } });
+      term.open(document.getElementById('term'));
+      term.focus();
+
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsParams = new URLSearchParams();
+      for (const k of ['verb', 'cluster', 'namespace', 'pod', 'container', 'command']) {
+        if (pageParams.get(k)) wsParams.set(k, pageParams.get(k));
+      }
+      wsParams.set('cols', String(term.cols));
+      wsParams.set('rows', String(term.rows));
+      const wsURL = proto + '//' + window.location.host + '/access/k8s?' + wsParams.toString();
+
+      const ws = new WebSocket(wsURL);
+      ws.binaryType = 'arraybuffer';
+
+      const enc = new TextEncoder();
+      function toB64(str) {
+        const bytes = enc.encode(str);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+      }
+
+      ws.onopen = function () {
+        setStatus('connected — ' + (pageParams.get('verb') || 'exec') + ' ' + (pageParams.get('pod') || 'session'), 'ok');
+        term.onData(function (data) {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: toB64(data) }));
+        });
+        term.onResize(function (size) {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+        });
+      };
+
+      const dec = new TextDecoder();
+      ws.onmessage = function (ev) {
+        if (ev.data instanceof ArrayBuffer) term.write(dec.decode(new Uint8Array(ev.data)));
+        else term.write(ev.data);
+      };
+      ws.onclose = function (ev) {
+        setStatus('disconnected' + (ev.reason ? ' — ' + ev.reason : '') + ' (code ' + ev.code + ')', 'err');
+        term.write('\r\n\x1b[31m[session closed]\x1b[0m\r\n');
+      };
+      ws.onerror = function () { setStatus('connection error', 'err'); };
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+# Default values for posture-signer.
+# Overrides live in the GitOps repository (the Argo Application values overlay).
+
+replicaCount: 2
+
+image:
+  # The posture-signer binary is embedded in the talon image (one
+  # SLSA chain covers all 3 talon binaries: talon, svctoken-refresher,
+  # posture-signer — see Dockerfile lines 84-108). The chart's
+  # `command: ["/posture-signer"]` override (templates/deployment.yaml)
+  # selects the right binary at container start.
+  #
+  # Production override in the GitOps repository env values pins this to
+  # the tracked tag (image-updater writes back on every CI build).
+  repository: internal.example.com/talon/talon
+  tag: "latest"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Service account — must match the Vault k8s auth role binding in
+# datacenters/eu-west-1/vault/posture-signer-key.tf
+serviceAccount:
+  name: posture-signer
+
+# Runtime flags passed to the posture-signer binary.
+config:
+  # Vault Transit address. In-cluster Service (vault-ha-internal) is preferred
+  # over the external Vault URL to avoid NAT hairpin.
+  vaultAddr: "http://vault-ha.vault.svc.cluster.local:8200"
+  # Vault Transit key name (must match the TF resource).
+  vaultKey: "posture-signer"
+  # JWS iss claim. Must match TrustedIssuers in the Talon verifier config.
+  issuer: "https://posture.hexxlock.com"
+  # JWS aud claim. Must match ExpectedAudience in the Talon verifier config.
+  audience: "https://internal.example.com"
+  logLevel: "info"
+  # CAEP transmitter (ADR 0043). When enabled, posture-signer emits a
+  # device-compliance-change Security Event Token to Talon's CAEP receiver
+  # whenever a device crosses the compliance boundary. The binary reads
+  # these as POSTURE_CAEP_* env (see templates/deployment.yaml). Disabled by
+  # default; the env overlay flips `enabled` + sets `receiverURL`.
+  caep:
+    enabled: false
+    # Talon's CAEP receiver. /caep/events is host-scoped to the auth host,
+    # so this MUST be the auth host URL (the HTTP client sends Host from it).
+    receiverURL: "https://internal.example.com/caep/events"
+    # subject.iss of the emitted events — the user-session OWNER Talon keys
+    # revocation on (Falcon-ID), distinct from the SET issuer (posture-signer).
+    subjectIssuer: "https://id.hexxlock.com"
+    # Optional SET aud override. Empty → the binary falls back to --audience.
+    audience: ""
+    # Compliance baseline (CSV). A device is "compliant" iff every listed key
+    # is boolean-true in its heartbeat. Must match real probe keys
+    # (posture-probes-linux emits disk_encryption, screen_lock_enabled,
+    # edr_running, hardware_id_match).
+    requiredKeys: "disk_encryption"
+
+service:
+  ports:
+    http: 8080
+    metrics: 9090
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+probes:
+  liveness:
+    httpGet:
+      path: /healthz
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /readyz
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 3
+
+podAnnotations:
+  # Linkerd + Vault Agent Injector ORDERING — REQUIRED.
+  #
+  # Linkerd's init container installs iptables rules that redirect ALL
+  # outbound TCP through 127.0.0.1:4140 (the proxy outbound port).
+  # vault-agent-init runs as an EARLIER init container (before
+  # linkerd-proxy is listening on 4140), so when it dials
+  # vault-ha.vault.svc:8200 the kernel redirects the packet to a port
+  # that has no listener — `connect: connection refused`. The
+  # vault-agent-init then backs off in a tight retry loop until the
+  # pod hits its deadline.
+  #
+  # `config.linkerd.io/skip-outbound-ports: "8200"` tells linkerd-init
+  # to NOT install the iptables redirect for destination port 8200.
+  # vault-agent-init's traffic then leaves the pod directly (not via
+  # linkerd-proxy), bypassing the chicken-and-egg.
+  #
+  # Pattern matches atlantis-0 pod (verified in cluster 2026-06-08).
+  config.linkerd.io/skip-outbound-ports: "8200"
+  # Vault Agent Injector — injects the Vault token for the posture-signer
+  # Kubernetes auth role. The token is written to /vault/secrets/token and
+  # renewed before the TTL expires. See posture-signer-key.tf for the
+  # token_ttl=1h, token_max_ttl=2h role configuration.
+  vault.hashicorp.com/agent-inject: "true"
+  vault.hashicorp.com/role: "posture-signer"
+  # Inject the Vault token to a file the binary reads on every sign call.
+  vault.hashicorp.com/agent-inject-secret-token: "auth/token/lookup-self"
+  vault.hashicorp.com/agent-inject-template-token: |
+    {{- with secret "auth/token/lookup-self" -}}
+    {{ .Data.id }}
+    {{- end }}
+  # Ensure the init container completes the first token fetch before the
+  # main container starts (readiness gate — the binary requires the token
+  # to be present on startup for the initial JWKS refresh from Vault).
+  vault.hashicorp.com/agent-init-first: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Linkerd mTLS inbound policy.
+# The Server CR is set to proxyProtocol: HTTP/1 (omit field — use default
+# auto-detect per internal engineering notes).
+# Allowed callers:
+#   - envoy-gateway-system/envoy-gateway (device-cert-terminated heartbeats
+#     forwarded from the Envoy Gateway data plane)
+#   - talon/talon (for direct same-mesh calls from the Talon proxy, if needed)
+linkerd:
+  inbound:
+    enabled: true
+    mode: enforce   # switch to "audit" during initial rollout if needed
+    # Each entry is a ServiceAccount {name, namespace} that may send
+    # inbound heartbeats to the posture-signer.
+    allowedCallers:
+      - name: envoy-gateway
+        namespace: envoy-gateway-system
+
+# Device CA PEM — mounted from a Secret (jess-device-ca).
+# The Secret is managed by the ExternalSecret pointing at Vault PKI
+# /v1/jess-device-ca/ca (same pattern as the jess operator-cert Secret).
+deviceCASecret:
+  name: posture-signer-device-ca
+  key: ca.crt
+  mountPath: /etc/posture-signer
+  fileName: device-ca.pem
+
+# PrometheusRule alerts.
+prometheusRule:
+  enabled: true
+  namespace: monitoring
+  additionalLabels:
+    release: kube-prometheus-stack

@@ -1,0 +1,81 @@
+# BuildKit build-context exclusions for talon.
+#
+# Diagnosed alongside falcon-id 2026-06-04: talon's CI pins
+#   GOMODCACHE = ${CI_PROJECT_DIR}/.go/mod
+#   GOCACHE    = ${CI_PROJECT_DIR}/.go/build
+# so the lint + test stages populate .go/ inside the repo before the
+# build stage hands it to BuildKit as `--local context=…`. None of it
+# is needed inside the image (the Dockerfile's `go mod download` pulls
+# fresh from Athens), so we drop it from the context.
+#
+# Talon's `e2e/` directory holds 38 MB of Playwright test fixtures —
+# also useless inside the runtime image (the Dockerfile only COPYs
+# go.mod, go.sum, cmd/, internal/, api/).
+
+# ─── Go caches (the big one) ──────────────────────────────────────
+.go/
+**/.go/
+
+# ─── Git ──────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.gitlab-ci.yml
+.gitlab/
+
+# ─── Test suites — not COPYd into the image ──────────────────────
+e2e/
+**/*_test.go
+**/testdata/
+**/fixtures/
+
+# ─── Build artifacts (from local `go build`) ──────────────────────
+bin/
+dist/
+**/*.test
+**/*.exe
+**/*.out
+coverage.out
+coverage.html
+cover.out
+
+# ─── CI artifact files passed via needs: artifacts: true ──────────
+gosec-report.json
+sbom.json
+sbom*.json
+sbom*.xml
+harbor-trivy-*.json
+trivy-*.json
+
+# ─── Vendored deps (Athens replaces) ──────────────────────────────
+vendor/
+
+# ─── Examples + docs + deploy manifests — not runtime inputs ──────
+examples/
+docs/
+deploy/
+
+# ─── IDE / editor / OS detritus ───────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ─── Secrets ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+SECRETS.local.txt*
+
+# ─── Docker meta — not needed inside the image ────────────────────
+.dockerignore
+Dockerfile*
+docker-compose*.yml
+
+# ─── Linter configs — only useful in CI ───────────────────────────
+.golangci.yml
+.golangci-*.yml

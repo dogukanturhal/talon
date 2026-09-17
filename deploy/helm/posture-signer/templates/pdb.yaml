@@ -1,0 +1,31 @@
+{{- if gt (int .Values.replicaCount) 1 }}
+# PodDisruptionBudget — protects against simultaneous voluntary
+# disruption of all replicas during node drain / rollouts. The
+# posture-signer is single-point-of-trust for fleet-wide posture
+# JWS minting; losing both replicas mid-roll would drop every
+# in-flight heartbeat verification.
+#
+# minAvailable=1 with replicaCount=2 means a rolling restart keeps
+# at least one Ready pod at all times. The chart's rollingUpdate
+# strategy (maxSurge=1, maxUnavailable=1) lets the rollout proceed
+# on a 2-worker cluster where 1-pod-per-node topology means surge
+# cannot find a third node — the PDB still defends against external
+# disruption (kubectl drain, kubelet eviction under pressure, node
+# upgrade) by refusing voluntary evictions that would take the count
+# below minAvailable.
+#
+# Skipped for replicaCount=1 (single-replica deploys cannot have
+# minAvailable=1 — would block every reboot).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "posture-signer.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "posture-signer.selectorLabels" . | nindent 6 }}
+{{- end }}

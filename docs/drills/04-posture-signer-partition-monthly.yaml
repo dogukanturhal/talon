@@ -1,0 +1,81 @@
+# Drill 04 — posture-signer ↔ Talon network partition (monthly)
+#
+# Per ADR 0042 §9.c. Exercises the HexxLock Access agent-side
+# posture-cache-and-retry path.
+#
+# The posture-signer service (ADR 0040 Phase 4) receives signed
+# heartbeats from HexxLock Access agents on user devices, validates
+# device-cert + posture facts, signs a posture JWS bound to the
+# device-cert SAN, and returns the JWS to the agent. The agent
+# stamps the JWS into the X-Talon-Posture header on its outbound
+# requests until either expiry (1h default per ADR 0011 §4) or
+# the next heartbeat cycle.
+#
+# When posture-signer is unreachable, the agent MUST:
+#   (a) continue using its last-issued posture JWS (up to expiry),
+#   (b) retry the heartbeat with exponential backoff (default
+#       schedule per ADR 0011: 1s, 5s, 30s, 5min),
+#   (c) page the user only if the JWS expires WITHOUT a successful
+#       refresh, then drop to TIER_BREAKGLASS or kick the user out
+#       per the configured route's auditOnly / enforce setting.
+#
+# Failure modes this drill catches:
+#   - If the agent doesn't cache the JWS and instantly drops to
+#     unauthenticated state (would break user flows immediately)
+#   - If the agent backoff is too aggressive and saturates the
+#     signer once it comes back (would manifest as a thundering-herd
+#     burst at partition-end)
+#   - If Talon doesn't gracefully handle a missing X-Talon-Posture
+#     header on a route that expects one (different from "expired
+#     header" — the audit caught a regression here in pm!843)
+#   - If the posture-signer is the SoT for "device is still trusted"
+#     and an unreachable signer doesn't surface as a real revocation
+#     event (would let stolen devices keep operating offline)
+#
+# Schedule: 15th of month, 03:00 UTC. Mid-month offset from drill 02
+# avoids stacking medium-severity partitions on the same on-call
+# rotation.
+#
+# REF: chaos-mesh.org/docs/simulate-network-chaos-on-kubernetes/
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: posture-signer-partition-monthly
+  namespace: chaos-mesh
+  labels:
+    drill.hexxlock.com/family: ztna-phase9
+    drill.hexxlock.com/severity: medium
+    drill.hexxlock.com/adr: "0042"
+spec:
+  # 15th of each month at 03:00 UTC
+  schedule: "0 3 15 * *"
+  historyLimit: 5
+  concurrencyPolicy: Forbid
+  type: NetworkChaos
+  networkChaos:
+    action: partition
+    # 10-minute outage — longer than the typical posture JWS
+    # mid-life (default 1h, agents heartbeat every 5min so most
+    # JWSes have ≤5min freshness), short enough that a fleet-wide
+    # cache-fall-out is bounded.
+    duration: "10m"
+    mode: all
+    selector:
+      namespaces:
+        - talon
+      labelSelectors:
+        app.kubernetes.io/name: posture-signer
+    # Partition target: HexxLock Access ingress (the Envoy Gateway
+    # route that proxies internal.example.com to the
+    # posture-signer Service). The drill cleanly tests the
+    # signer-unreachable case from the agent's perspective.
+    direction: from
+    target:
+      mode: all
+      selector:
+        namespaces:
+          - envoy-gateway-system
+        labelSelectors:
+          app.kubernetes.io/name: envoy-gateway
+          gateway: ops-mtls

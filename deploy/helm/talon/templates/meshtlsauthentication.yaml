@@ -1,0 +1,17 @@
+{{- if .Values.linkerd.identity.enabled }}
+{{- /* MeshTLSAuthentication exposing Talon's SPIFFE identity. Upstream
+       services (prometheus, grafana, argocd, etc.) reference this MTA in
+       their own AuthorizationPolicy to allow only Talon as a caller. */}}
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ include "talon.fullname" . }}-identity
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  identityRefs:
+    - kind: ServiceAccount
+      name: {{ include "talon.serviceAccountName" . }}
+      namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://talon.hexxlock.com/schemas/0041-audit-record.json",
+  "title": "talon.audit.v1 — Audit Record",
+  "description": "ADR 0041 §6 — canonical NDJSON audit record shape emitted by Talon at every request/response cycle. Consumed by audit-replay --validate-schema (Phase 8.c.3), compliance-evidence framework controls (Phase 8.d), and the WORM archive replay tooling. Forward-compatible per the 7-year retention contract: every field is optional EXCEPT `ts` so an older binary's recorded events stay parseable. Strict-mode validation surfaces field-type drift early.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ts"],
+  "properties": {
+    "ts": {
+      "description": "Event timestamp in RFC 3339 with optional nano precision. Required so chronological ordering is always derivable.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "seq": {
+      "description": "Hash-chain sequence number per ADR 0041 §6.b. Per-pod-monotonic.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "prev_hash": {
+      "description": "Hash-chain PrevHash — hex of the prior record's Hash. Empty for the first record in a chain. Validated by audit-replay --reconstruct-session for chain integrity.",
+      "type": "string",
+      "pattern": "^([a-f0-9]{0,128})$"
+    },
+    "hash": {
+      "description": "Hash-chain Hash — hex sha256 of (PrevHash || canonical record). Empty before chain.Stamp middleware was wired (forward compat).",
+      "type": "string",
+      "pattern": "^([a-f0-9]{0,128})$"
+    },
+    "event": {
+      "description": "Event family name — used by --ztna-decision-stats + --reconstruct-session transition mapping. Recognized values are listed in cmd/audit-replay/session.go:transitionFor.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "sub": {
+      "description": "Falcon-ID OIDC subject (opaque UUID). Used as the primary user identity correlator.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "email": {
+      "description": "Falcon-ID-resolved email at the time of the event. May trail behind iam_users.email if user changed email; that's intentional (the audit log records what Talon SAW).",
+      "type": "string",
+      "maxLength": 320
+    },
+    "tenant_id": {
+      "description": "Tenant scope of the event. opaque UUID.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "route": {
+      "description": "TalonRoute host that handled the request (e.g. internal.example.com).",
+      "type": "string",
+      "maxLength": 253
+    },
+    "method": {
+      "description": "HTTP method.",
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE", ""]
+    },
+    "path": {
+      "description": "Upstream request path. Capped at a generous 4KB to defend the WORM archive against unbounded growth from pathological query strings.",
+      "type": "string",
+      "maxLength": 4096
+    },
+    "decision": {
+      "description": "Per-request enforcement decision.",
+      "type": "string",
+      "enum": ["allow", "deny", "audit", "passthrough", "challenge", ""]
+    },
+    "reason": {
+      "description": "Reason code or short string explaining the decision. For deny: machine-stable code (e.g. ztna: tier=TIER_BYOD route requires TIER_CORP). For allow/passthrough: optional context (rate-limited / cached / etc.).",
+      "type": "string",
+      "maxLength": 1024
+    },
+    "src_ip": {
+      "description": "Source IP that initiated the request. v4 or v6 textual representation.",
+      "type": "string",
+      "maxLength": 64
+    },
+    "session_id": {
+      "description": "Talon-side session identifier (ADR 0011 §4.2). Used by --reconstruct-session.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "permission": {
+      "description": "SpiceDB permission that was checked for this request (talon-conf editor/viewer/admin per TalonRoute spec).",
+      "type": "string",
+      "maxLength": 256
+    },
+    "iss": {
+      "description": "Identity-token issuer URL (typically https://id.hexxlock.com).",
+      "type": "string",
+      "maxLength": 256
+    },
+    "decision_id": {
+      "description": "Stable identifier for THIS particular enforcement decision (joins to OPA decision log + Talon's own decision cache).",
+      "type": "string",
+      "maxLength": 256
+    },
+    "sso_chain_id": {
+      "description": "Chain identifier linking ALL records emitted during one SSO authentication ceremony (login + MFA + grant). Used for end-to-end session reconstruction.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "talon_version": {
+      "description": "Talon binary semver tag emitting the record. Per ADR 0001 §3 record-emitter version is essential for replay-tool compatibility across the 7-year retention window.",
+      "type": "string",
+      "maxLength": 64
+    }
+  }
+}

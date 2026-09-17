@@ -1,0 +1,202 @@
+{{- if .Values.linkerd.inbound.enabled }}
+{{- /* Phase 4: enforce/audit AuthorizationPolicy for inbound to Talon's
+       :8443. Only Traefik instances on traefik-internal should be able to
+       reach Talon directly (browser path).
+
+       For Phase 0/1 the Server CR + AuthzPolicy are not enabled
+       (linkerd.inbound.enabled=false); Linkerd default-allow ingresses
+       traffic from the meshed Traefik. Enable in Phase 4 once the
+       Linkerd identity for traefik-internal is stable. */}}
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: {{ include "talon.fullname" . }}-https
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  port: https
+  podSelector:
+    matchLabels:
+      {{- include "talon.selectorLabels" . | nindent 6 }}
+  proxyProtocol: HTTP/2
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "talon.fullname" . }}-allow-traefik
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+  annotations:
+    linkerd.io/audit-mode: {{ eq .Values.linkerd.inbound.mode "audit" | ternary "true" "false" | quote }}
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: {{ include "talon.fullname" . }}-https
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: traefik-internal-identity
+      namespace: traefik-internal
+{{- if .Values.backchannelLogout.directMeshAllow.enabled }}
+---
+{{- /* OIDC Back-Channel Logout 1.0 receiver — allow Falcon-ID to call
+       https://talon-talon.talon.svc:8443/auth/backchannel-logout directly
+       over Linkerd mTLS, bypassing the public Traefik hairpin. The
+       handler still validates the JWT per spec §2.6; this MTA gives
+       defense-in-depth at the wire layer so a leaked logout_token
+       cannot reach Talon from a non-Falcon-ID pod.
+
+       Defaults to ENABLED because the public-URL path requires NAT
+       reflection on OPNsense which memory internal engineering notes
+       calls out as fragile. Disable only when intentionally routing
+       through Traefik (the chart's traefik MTA above stays as the
+       browser-path policy regardless).
+
+       Note: this AuthorizationPolicy and MTA bind to the same Server
+       CR as the traefik allow above — Linkerd ORs the
+       AuthorizationPolicies, so traffic from EITHER identity passes. */}}
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ include "talon.fullname" . }}-bcl-falcon-id
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  identityRefs:
+    - kind: ServiceAccount
+      name: {{ .Values.backchannelLogout.directMeshAllow.callerServiceAccount.name | quote }}
+      namespace: {{ .Values.backchannelLogout.directMeshAllow.callerServiceAccount.namespace | quote }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "talon.fullname" . }}-allow-bcl-falcon-id
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+  annotations:
+    linkerd.io/audit-mode: {{ eq .Values.linkerd.inbound.mode "audit" | ternary "true" "false" | quote }}
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: {{ include "talon.fullname" . }}-https
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: {{ include "talon.fullname" . }}-bcl-falcon-id
+{{- /* Memory internal engineering notes: edge-26.4.x
+       binding race makes single-codepath unsafe. Emit the legacy
+       ServerAuthorization alongside so the policy lands regardless of
+       which control-plane index serialises first. */}}
+---
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: {{ include "talon.fullname" . }}-allow-bcl-falcon-id-sauth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  server:
+    name: {{ include "talon.fullname" . }}-https
+  client:
+    meshTLS:
+      serviceAccounts:
+        - name: {{ .Values.backchannelLogout.directMeshAllow.callerServiceAccount.name | quote }}
+          namespace: {{ .Values.backchannelLogout.directMeshAllow.callerServiceAccount.namespace | quote }}
+{{- end }}
+{{- if .Values.extAuthz.enabled }}
+---
+{{- /* Phase 7.2 — Linkerd policy gate for the Envoy ext_authz v3 gRPC
+       listener on :{{ .Values.extAuthz.port }}.
+
+       The ext_authz Service is the shared-PDP entry point for OTHER
+       data planes (APISIX customer-tier, future Envoy mesh, Istio
+       waypoint). Without this Server CR + AuthzPolicy, Linkerd's
+       default-allow would let any meshed pod call the PDP — that
+       breaks the principle that only legitimate data planes (the
+       PEPs) consult the PDP.
+
+       Pattern mirrors the :8443 (https) Server above. The allowed
+       callers are listed in values: extAuthz.allowedCallers — an
+       array of {name, namespace} ServiceAccount refs. Each entry
+       gets a MeshTLSAuthentication binding so Linkerd verifies the
+       caller's identity at the wire. Empty list = NO callers
+       allowed (fail-closed). */}}
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: {{ include "talon.fullname" . }}-extauthz
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: extauthz
+spec:
+  port: extauthz
+  podSelector:
+    matchLabels:
+      {{- include "talon.selectorLabels" . | nindent 6 }}
+  proxyProtocol: gRPC
+{{- range $i, $caller := .Values.extAuthz.allowedCallers }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ printf "%s-extauthz-%s-%s" (include "talon.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "talon.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: extauthz
+spec:
+  identityRefs:
+    - kind: ServiceAccount
+      name: {{ $caller.name | quote }}
+      namespace: {{ $caller.namespace | quote }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ printf "%s-allow-extauthz-%s-%s" (include "talon.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "talon.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: extauthz
+  annotations:
+    linkerd.io/audit-mode: {{ eq $.Values.linkerd.inbound.mode "audit" | ternary "true" "false" | quote }}
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: {{ include "talon.fullname" $ }}-extauthz
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: {{ printf "%s-extauthz-%s-%s" (include "talon.fullname" $) $caller.namespace $caller.name }}
+{{- /* Memory internal engineering notes — emit the
+       legacy ServerAuthorization alongside so policy lands regardless
+       of which control-plane index serialises first. */}}
+---
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: {{ printf "%s-allow-extauthz-%s-%s-sauth" (include "talon.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "talon.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: extauthz
+spec:
+  server:
+    name: {{ include "talon.fullname" $ }}-extauthz
+  client:
+    meshTLS:
+      serviceAccounts:
+        - name: {{ $caller.name | quote }}
+          namespace: {{ $caller.namespace | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

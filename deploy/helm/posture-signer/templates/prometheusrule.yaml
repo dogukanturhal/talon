@@ -1,0 +1,116 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "posture-signer.fullname" . }}
+  namespace: {{ .Values.prometheusRule.namespace }}
+  labels:
+    {{- include "posture-signer.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: posture-signer.health
+      # Evaluation interval matches the 5-minute JWKS refresh cycle so
+      # the JWKSCacheAge alert fires at most 2 intervals after Vault goes
+      # unreachable.
+      interval: 1m
+      rules:
+        # --- Vault Transit unreachable ---
+        # The JWKS cache age grows monotonically when RefreshJWKS fails.
+        # Alert at 600s (2× the 5-minute refresh interval) so the operator
+        # has one full refresh window to investigate before the cache
+        # becomes dangerously stale (key rotation overlap window).
+        - alert: PostureSignerJWKSCacheStale
+          expr: talon_posture_signer_jwks_cache_age_seconds > 600
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "posture-signer JWKS cache stale (Vault Transit unreachable?)"
+            description: >-
+              talon_posture_signer_jwks_cache_age_seconds is {{ "{{ $value | humanizeDuration }}" }}.
+              posture-signer has not refreshed its public key set from Vault Transit in > 10 minutes.
+              New JWS tokens are still being issued (with the cached key) but a Transit key rotation
+              during this window will cause posture verification failures in Talon.
+              Check Vault HA status and the posture-signer logs for RefreshJWKS errors.
+
+        # --- Vault signing failures ---
+        # A non-zero vault_error rate means the Transit sign call is failing.
+        # This is distinct from JWKS staleness — the service cannot issue
+        # new JWS tokens even though old ones may still verify.
+        - alert: PostureSignerVaultSignErrors
+          expr: |
+            rate(talon_posture_signer_sign_total{outcome="vault_error"}[5m]) > 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "posture-signer Vault Transit sign calls failing"
+            description: >-
+              posture-signer is receiving vault_error outcomes from Vault Transit.
+              Agents will not receive fresh posture JWS tokens until this is resolved.
+              Check Vault HA status, the posture-signer SA token validity, and the
+              posture-signer-issuer Vault policy (transit/sign/posture-signer capability).
+
+        # --- Replay attack or misconfigured agent clock ---
+        # A sustained nonce_replay rate is abnormal. Sporadic single events
+        # are possible (retry storms), but sustained activity indicates
+        # either an active replay attempt or an agent clock drift issue.
+        - alert: PostureSignerNonceReplaySustained
+          expr: |
+            rate(talon_posture_signer_sign_total{outcome="nonce_replay"}[10m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "posture-signer: sustained nonce replay rate detected"
+            description: >-
+              Rate of nonce replay rejections is {{ "{{ $value | humanize }}" }}/s over 10 minutes.
+              This may indicate an active replay attack or a misconfigured agent sending the
+              same nonce repeatedly. Review posture-signer access logs and correlate with
+              the device UUIDs in the heartbeat requests.
+
+        # --- Pod unavailability ---
+        # Both replicas must be ready for HA. A single unavailable pod
+        # halves the signing capacity and means one node failure would
+        # cause a complete outage.
+        - alert: PostureSignerPodUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="{{ .Release.Namespace }}",
+              deployment="{{ include "posture-signer.fullname" . }}"
+            } < {{ .Values.replicaCount }}
+          for: 2m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "posture-signer: fewer replicas available than desired"
+            description: >-
+              posture-signer has fewer than {{ .Values.replicaCount }} replicas available.
+              One node failure will cause a complete signing outage.
+              Check the Deployment and pod events for the root cause.
+
+        # --- Nonce cache memory pressure ---
+        # Steady-state size = (active_devices × heartbeats_per_10min).
+        # A spike to 10,000+ indicates either a nonce-flood attack or
+        # a GC failure. Alert at 5,000 as an early warning.
+        - alert: PostureSignerNonceCachePressure
+          expr: talon_posture_signer_nonce_cache_size > 5000
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "posture-signer nonce cache unusually large"
+            description: >-
+              talon_posture_signer_nonce_cache_size is {{ "{{ $value }}" }}.
+              Expected steady state: (active_devices × heartbeats_per_10min).
+              A sustained spike without matching sign_total increase indicates
+              a nonce-flood attack or a GC failure in the nonce dedup cache.
+{{- end }}

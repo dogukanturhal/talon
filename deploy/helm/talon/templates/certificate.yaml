@@ -1,0 +1,33 @@
+{{- /* cert-manager Certificate for the in-pod TLS listener (:8443).
+       Browser traffic terminates TLS at traefik-internal; the in-cluster
+       hop from Traefik to Talon is HTTPS but with insecureSkipVerify=true
+       in the ServersTransport (since Linkerd handles wire mTLS). The
+       cert just needs to be valid enough for Go's TLS server to accept
+       it; example-tenant ClusterIssuer is the right tier-1 source. */}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "talon.fullname" . }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "talon.fullname" . }}-tls
+  issuerRef:
+    name: {{ .Values.tls.issuer.name }}
+    kind: {{ .Values.tls.issuer.kind }}
+  commonName: {{ .Values.ingress.authHost }}
+  dnsNames:
+    - {{ .Values.ingress.authHost }}
+    - {{ include "talon.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "talon.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  duration: 2160h   # 90 days
+  renewBefore: 360h # 15 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment

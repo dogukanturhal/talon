@@ -1,0 +1,72 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "automerge": false,
+  "platformAutomerge": false,
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "branchPrefix": "renovate/",
+  "schedule": [
+    "every weekend"
+  ],
+  "commitMessagePrefix": "deps:",
+  "commitMessageAction": "update",
+  "vulnerabilityAlerts": {
+    "labels": [
+      "dependencies",
+      "security",
+      "priority::high"
+    ],
+    "schedule": [
+      "at any time"
+    ],
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Group the golang.org/x/* modules. They are a coupled set \u2014 x/text pulls x/net which pulls x/crypto \u2014 so bumping one alone produces an unsatisfiable go.mod (live 2026-08-05: three CI round-trips resolving text -> net -> crypto one at a time).",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackagePatterns": [
+        "^golang\\.org/x/"
+      ],
+      "groupName": "golang.org/x",
+      "groupSlug": "golang-x"
+    },
+    {
+      "description": "Go toolchain in the Dockerfiles is deliberately MAJOR.MINOR, not a pinned patch, so a Go security patch is picked up on the next build without a PR. Do not let Renovate pin it back to an exact patch.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchDepNames": [
+        "golang",
+        "mirror.gcr.io/library/golang"
+      ],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "zed is built from source in Dockerfile.tools against a SHA-pinned tag. Track the tag so a new zed release surfaces as a PR; the ZED_COMMIT_SHA next to it must be updated in the same change (the build asserts they match and fails closed if not).",
+      "customType": "regex",
+      "fileMatch": [
+        "^Dockerfile\\.tools$"
+      ],
+      "matchStrings": [
+        "ARG ZED_VERSION=(?<currentValue>v[0-9][^\\s]*)"
+      ],
+      "depNameTemplate": "authzed/zed",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "fetchChangeLogs": "off"
+}

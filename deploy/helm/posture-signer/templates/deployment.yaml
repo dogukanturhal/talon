@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "posture-signer.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" . | nindent 4 }}
+  annotations:
+    # Stakater Reloader — roll the Deployment when the device-CA Secret
+    # changes (e.g. jess-device-ca root rotation). Mirrors the pattern
+    # used by the main Talon deployment.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # Two replicas for HA — posture-signer is the single trust point for
+  # ZTNA Phase 4 freshness; a single-pod failure would block all agent
+  # heartbeat acceptance until the pod is rescheduled.
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable=1 is required on the 2-worker prod cluster:
+      # topologySpreadConstraints below enforce 1-pod-per-node with
+      # whenUnsatisfiable=DoNotSchedule, and HPA pins replicas:2.
+      # With maxUnavailable=0 + maxSurge=1, the surge pod has no node
+      # to land on (both workers already host a pod) → rollouts stall
+      # forever (caught 2026-06-09 on the Path B URL migration).
+      # Trading 1 pod of temporary unavailability for guaranteed
+      # forward progress is the correct trade for a 2-worker cluster.
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "posture-signer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "posture-signer.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Spread replicas across nodes so a single node failure doesn't
+      # take out both posture-signer pods.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "posture-signer.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: posture-signer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The talon image embeds three binaries (talon,
+          # svctoken-refresher, posture-signer) under the SLSA chain
+          # of one image. ENTRYPOINT defaults to /talon; override to
+          # /posture-signer here. See Dockerfile lines 84-108 + the
+          # rationale comment block above the posture-signer build
+          # step in that file.
+          command: ["/posture-signer"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - "--listen=:{{ .Values.service.ports.http }}"
+            - "--metrics-listen=:{{ .Values.service.ports.metrics }}"
+            - "--vault-addr={{ .Values.config.vaultAddr }}"
+            - "--vault-key={{ .Values.config.vaultKey }}"
+            - "--vault-token-path=/vault/secrets/token"
+            - "--device-ca-pool={{ .Values.deviceCASecret.mountPath }}/{{ .Values.deviceCASecret.fileName }}"
+            - "--issuer={{ .Values.config.issuer }}"
+            - "--audience={{ .Values.config.audience }}"
+            - "--log-level={{ .Values.config.logLevel }}"
+          {{- if .Values.config.caep.enabled }}
+          # CAEP transmitter (ADR 0043) — the binary reads these from env.
+          env:
+            - name: POSTURE_CAEP_ENABLED
+              value: "true"
+            - name: POSTURE_CAEP_RECEIVER_URL
+              value: {{ .Values.config.caep.receiverURL | quote }}
+            - name: POSTURE_CAEP_SUBJECT_ISSUER
+              value: {{ .Values.config.caep.subjectIssuer | quote }}
+            {{- if .Values.config.caep.audience }}
+            - name: POSTURE_CAEP_AUDIENCE
+              value: {{ .Values.config.caep.audience | quote }}
+            {{- end }}
+            - name: POSTURE_CAEP_REQUIRED_KEYS
+              value: {{ .Values.config.caep.requiredKeys | quote }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.ports.http }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.ports.metrics }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: device-ca
+              mountPath: {{ .Values.deviceCASecret.mountPath }}
+              readOnly: true
+      # NOTE: do NOT pre-declare a `vault-secrets` volume / volumeMount.
+      # The Vault Agent Injector mutating webhook (vault-agent-injector
+      # in `vault` ns) adds its own `vault-secrets` projected volume +
+      # volumeMount at /vault/secrets when the
+      # `vault.hashicorp.com/agent-inject=true` podAnnotation is
+      # present. Pre-declaring our own collides with that mutation —
+      # the resulting Pod spec has two volumes named `vault-secrets`
+      # AND two volumeMounts pointing at /vault/secrets, which the API
+      # server rejects (`Duplicate value: "vault-secrets"`). The chart's
+      # only legitimate options are:
+      #   1. Trust the injector (this chart's choice, since
+      #      vault.hashicorp.com/role + secret annotations are set in
+      #      podAnnotations below). The injector ADDS the volume.
+      #   2. Disable the injector and manage the Vault token yourself
+      #      via a CSI driver or ESO ExternalSecret — different chart.
+      # Mixing the two patterns is the bug we hit on first deploy.
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: device-ca
+          secret:
+            secretName: {{ .Values.deviceCASecret.name }}
+            items:
+              - key: {{ .Values.deviceCASecret.key }}
+                path: {{ .Values.deviceCASecret.fileName }}
+            defaultMode: 0400

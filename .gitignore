@@ -1,0 +1,50 @@
+# Go build artefacts
+/bin/
+/dist/
+/build/
+*.test
+*.out
+coverage.out
+coverage.html
+*.prof
+
+# Go module cache copies (CI uses these paths)
+/.go/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local secrets — anything matching these patterns must never land in git.
+# Vault references go in Helm values.yaml; raw values stay on disk only.
+*.local.txt
+*.local.yaml
+*.local.yml
+*.local.env
+.env
+.env.*
+
+# CI artefacts pulled down for inspection
+*.sbom.json
+sbom.json
+gosec-report.json
+harbor-trivy-*.json
+
+# Helm chart packaged tarballs
+deploy/helm/*/charts/
+deploy/helm/*/Chart.lock
+*.tgz
+
+# iOS captures — these are intentionally tracked, listed here only as a
+# reminder that captures/ is NOT git-ignored. INDEX.md is the catalogue.
+# !e2e/ios/captures/
+svctoken-refresher
+
+# Build artifacts (CLI binaries) — built by 'go build ./cmd/...' locally.
+/audit-replay
+/compliance-evidence
+/posture-signer
+/talon

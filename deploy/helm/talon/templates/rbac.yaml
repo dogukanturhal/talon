@@ -1,0 +1,119 @@
+{{- /* RBAC for the TalonRoute controller-runtime reconciler.
+
+       Cluster-scoped reads of TalonRoute (CRs land in any namespace);
+       namespace-scoped Lease for leader election (lives in this Release's
+       namespace per ADR 0003 §4.4).
+
+       The controller is gated by `controller.enabled`; if disabled, RBAC
+       still ships (idempotent) — costs nothing and avoids an extra
+       upgrade hop when the operator flips it on.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "talon.fullname" . }}-controller
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["gateway.talon.hexxlock.com"]
+    resources: ["talonroutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.talon.hexxlock.com"]
+    resources: ["talonroutes/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["gateway.talon.hexxlock.com"]
+    resources: ["talonroutes/finalizers"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "talon.fullname" . }}-controller
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "talon.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "talon.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "talon.fullname" . }}-controller-leases
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "talon.fullname" . }}-controller-leases
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "talon.fullname" . }}-controller-leases
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "talon.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# talon-service-tokens Phase 4.5 — credential exchange Secret reads.
+# When a TalonRoute uses authMode=bearer_or_basic_with_credential_exchange,
+# the router calls credexchange.K8sSecretLoader.Load(host) which reads
+# a Kubernetes Secret named `talon-upstream-creds-<host-with-dashes>`
+# in THIS Release's namespace. The loader needs `get` on secrets to
+# resolve the per-host upstream credential before substituting on the
+# outbound request.
+#
+# Scope is intentionally namespace-local (not ClusterRole): Talon
+# only reads credentials from its OWN namespace, where ExternalSecrets
+# hydrate the per-host material from Vault. The blast radius of a
+# Talon pod compromise is therefore bounded to the upstream credentials
+# Talon would have substituted anyway.
+#
+# We DO NOT enumerate resourceNames because the per-host Secret set
+# is dynamic (a new host = a new Secret name). Limiting verbs to `get`
+# (no list/watch) keeps the permission scoped to what the loader
+# actually does — single-secret fetches on demand, no enumeration of
+# the namespace's Secret set.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "talon.fullname" . }}-upstream-creds
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "talon.fullname" . }}-upstream-creds
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "talon.fullname" . }}-upstream-creds
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "talon.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

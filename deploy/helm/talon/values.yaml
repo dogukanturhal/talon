@@ -1,0 +1,644 @@
+# Talon Helm chart — Phase 0 skeleton
+#
+# Deploys the OIDC-RP reverse proxy on internal.example.com plus per-host
+# IngressRoutes for protected admin services. Phase 0 ships replicas:0 so the
+# chart can sync via Argo before the Phase 1 binary lands; bump replicaCount
+# once a real image tag is in Harbor.
+#
+# Scoped to the `talon` namespace (Application creates it).
+
+global:
+  environment: prod
+  region: eu-west-1
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: internal.example.com/talon/talon
+  tag: "0.0.0-placeholder"   # CI bump-manifest replaces with commit SHA
+  pullPolicy: IfNotPresent
+  pullSecrets:
+    - name: harbor-registry-creds  # ExternalSecret-projected from Vault
+
+# ---------------------------------------------------------------------------
+# Workload
+# ---------------------------------------------------------------------------
+replicaCount: 0   # Phase 0: no image yet. Phase 1 bumps to 2.
+
+# Default in templates/deployment.yaml is 2 — the chart's nominal value
+# for production. Set higher locally if a future incident requires more
+# rollback depth. Lower than 2 risks losing a viable rollback target
+# during the maxSurge=1 window of the next rolling update.
+revisionHistoryLimit: 2
+
+podAnnotations:
+  linkerd.io/inject: enabled
+  # No config.linkerd.io/proxy-version pin — OSS Linkerd has no stable
+  # past 2.14.10 (memory internal engineering notes), so
+  # the cluster's installed edge-* flows by default.
+  # Don't enable opaque-port skip without a Server CR — see
+  # internal engineering notes
+  #
+  # `linkerd-await` init container — kubelet blocks the main `talon`
+  # container from starting until the linkerd-proxy reports ready
+  # on its admin port. Without this, talon's main container races
+  # the proxy at startup: on a slow node (verified 2026-05-08 on
+  # node-ops-01) the linkerd-proxy spends 15+s waiting for identity-
+  # service to issue its mTLS cert, but talon's first DNS lookup
+  # for `falcon-id-redis.falcon-id.svc.cluster.local` fires at the
+  # 5-second mark — `i/o timeout` because the proxy isn't yet
+  # forwarding outbound. CrashLoop loop until the proxy stabilises.
+  # `proxy-await: enabled` makes the race deterministic: main waits
+  # for proxy. Standard Linkerd guidance for any pod that talks to
+  # an outbound svc on startup.
+  config.linkerd.io/proxy-await: enabled
+podLabels: {}
+
+# deploymentAnnotations — additive to the chart-default
+# `reloader.stakater.com/auto: "true"` (rendered unconditionally in
+# templates/deployment.yaml). Use this to layer per-environment
+# annotations (e.g. observability scrape config, owner tags) without
+# touching the chart. Empty by default.
+deploymentAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Talon-specific runtime config. Injected into the container as env.
+config:
+  # External listening URL (browser-facing).
+  externalUrl: https://internal.example.com
+  # Cookie domain — see ADR 0002 §3.1; must be a suffix of externalUrl host.
+  cookieDomain: internal.example.com
+  # OIDC issuer (canonical Falcon-ID).
+  issuerUrl: https://id.hexxlock.com
+  # Internal-cluster issuer URL (used for /oauth/token, /oauth/userinfo, JWKS)
+  # to avoid the customer-tier traefik hop. JWT iss claim still asserts the
+  # public issuerUrl.
+  internalIssuerUrl: http://falcon-id-falcon-id.falcon-id.svc.cluster.local
+  # Redis (shared with falcon-id; namespace prefix talon: per ADR 0002 §4.3).
+  # Service name is `falcon-id-redis` (not `-master`).
+  redisAddr: falcon-id-redis.falcon-id.svc.cluster.local:6379
+  # SpiceDB.
+  spicedbAddr: spicedb-spicedb.spicedb.svc.cluster.local:50051
+  # Session config (defaults match ADR 0002 §3.1).
+  sessionTtlSeconds: 28800     # 8h hard exp
+  sessionRefreshSeconds: 60    # min interval between sliding refreshes
+  # OIDC scope set; must include the claims Talon needs (see ADR 0001 §6).
+  oidcScopes: openid,profile,email,groups,roles
+  # Required role for access. Talon's PE checks this string against the
+  # id_token `roles` claim — `platform_admin` is the Falcon-ID role for
+  # tenant-admin users. Defence-in-depth: PE also checks `groups`
+  # (no-op when iam_groups is empty, the platform default). SpiceDB
+  # CheckPermission supersedes in Phase 2.1 for per-route gating.
+  requiredRole: platform_admin
+  # How the cluster-wide requiredRole gate above behaves.
+  #
+  #   enforce  the gate denies any session lacking requiredRole, before
+  #            per-route SpiceDB is consulted. Legacy behaviour, default.
+  #   shadow   the gate is evaluated but NOT enforced — SpiceDB decides,
+  #            and disagreements log at WARN ("role gate SHADOW"). Run
+  #            this to validate the per-route model against real traffic
+  #            before cutting over.
+  #   off      SpiceDB's per-route relations are the sole authority.
+  #
+  # Why this exists: requiredRole is ONE role across EVERY *.ops host, so
+  # it cannot distinguish reading an npm package from administering
+  # Vault — granting a developer package access means making them a
+  # cluster admin. Every TalonRoute's allowedGroups is already projected
+  # into SpiceDB, so the per-route model is built and unused.
+  #
+  # Anything unrecognised resolves to enforce: a typo here must not
+  # silently remove an authorisation gate.
+  roleGateMode: enforce
+  # Comma-separated list of DNS suffixes that TalonRoute spec.host
+  # values must end with. Default "internal.example.com" preserves
+  # the historical single-zone constraint. Operators add new admin
+  # subzones (e.g. ".apps.hexxlock.com" for Track 2 subzone migration)
+  # by extending this list — no code change required. Must include
+  # the leading dot to prevent suffix-collision attacks (e.g.
+  # "evil-internal.example.com" must NOT match "internal.example.com").
+  # Empty / unset behaves as "internal.example.com".
+  protectedHostSuffixes: "internal.example.com"
+  # Comma-separated list of access-zone DNS suffixes for the agentless
+  # clientless tier (ADR 0044). A TalonRoute whose spec.host ends with one
+  # of these is admitted on equal footing with protectedHostSuffixes, and
+  # the router tags its requests channel=clientless (no device cert) so the
+  # AAL cap + clientlessMaxTTL apply. Empty / unset = clientless tier
+  # disabled (no access-zone hosts admitted) — existing deployments are
+  # unchanged on upgrade. Must include the leading dot (e.g.
+  # ".access.hexxlock.com") to prevent suffix-collision attacks.
+  clientlessHostSuffixes: ""
+  # Continuous verification interval (ADR 0001 §6, Phase 4).
+  continuousVerifyMinutes: 15
+  # Logging.
+  logLevel: info
+  logFormat: json
+
+  # CAEP 1.0 SET receiver (ADR 0011 Part A). Mounts POST /caep/events on
+  # the auth host; verifies inbound SET signatures against the transmitter
+  # JWKS and dispatches session-revoked / device-compliance-change events.
+  # Disabled by default — the env overlay enables it once a transmitter
+  # (posture-signer, ADR 0043) is shipping SETs.
+  caep:
+    enabled: false
+    # iss claim Talon requires on every inbound SET (the transmitter
+    # identity). For the posture-signer transmitter this is its JWS issuer.
+    transmitterIssuer: "https://posture.hexxlock.com"
+    # aud Talon requires on every inbound SET (this receiver's endpoint).
+    audience: "https://internal.example.com/caep/events"
+    # Optional JWKS fetch override. Default derives <transmitterIssuer>/
+    # .well-known/jwks.json, but posture-signer's issuer is Envoy
+    # device-cert-mTLS-gated and unreachable from this pod, so point the
+    # fetch at the in-cluster Service. The SET `iss` is still verified
+    # against transmitterIssuer; only the fetch location changes.
+    transmitterJwksUrl: ""
+
+  # ZTNA device-posture verifier (ADR 0040 / 0011). When enabled, Talon
+  # verifies the X-Talon-Posture JWS on routes that declare a policyRego
+  # (routes without one are unaffected). DISABLED by default — the env
+  # overlay enables it once the posture-injector extension (ADR 0002) is
+  # force-installed on operator workstations, so requests actually carry
+  # the header. trustedIssuers + audience are REQUIRED when enabled.
+  posture:
+    enabled: false
+    # iss values Talon accepts on the posture JWS (posture-signer).
+    trustedIssuers: []
+    # aud the posture JWS must carry (matches posture-signer's mint).
+    audience: ""
+    # Freshness budget (now - iat). Default 1h matches the JWS TTL.
+    maxAgeSeconds: 3600
+    # Optional JWKS URL override for signature verification. The posture
+    # issuer's public JWKS (https://posture.hexxlock.com/.well-known/jwks.json)
+    # is Envoy device-cert-mTLS-gated → unreachable from the Talon pod, so set
+    # this to the in-cluster posture-signer Service JWKS. Empty = derive
+    # <iss>/.well-known/jwks.json (only works for publicly-reachable issuers).
+    jwksUrl: ""
+
+  # ─────────────────────────────────────────────────────────────────
+  # Global ZTNA baseline policy (secure-by-default).
+  #
+  # When enabled, the chart mounts files/ztna_baseline.rego as a ConfigMap
+  # and sets TALON_DEFAULT_POLICY_REGO_FILE, so EVERY protected route that
+  # does NOT declare its own TalonRoute.spec.policyRego inherits the ZTNA
+  # posture baseline — device-posture enforcement is on by default, not
+  # opt-in per app. Per-route `sensitivity` still tunes the matrix; a route
+  # opts OUT with an explicit permissive policyRego (`default allow := true`).
+  #
+  # Requires config.posture.enabled=true (the baseline needs verified
+  # posture). Ship enabled:true ONLY after an audit-mode soak proves no
+  # legitimate route/operator is would-denied.
+  ztna:
+    defaultPolicy:
+      enabled: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # COOP carve-out hosts.
+  #
+  # Hosts whose responses Talon must NOT decorate with the
+  # `Cross-Origin-Opener-Policy` header. Carve-out for upstreams whose
+  # UI runs popup-based OAuth/OIDC and whose callback page calls
+  # `window.opener.postMessage(...)`. HashiCorp Vault UI is the
+  # textbook example: its OIDC popup chain is broken by ANY non-
+  # `unsafe-none` COOP value, including `same-origin-allow-popups`,
+  # because in many real-world browser/extension combinations the
+  # popup ends up in a context where `window.opener` is severed even
+  # when the WHATWG spec says it should be preserved. Documented at
+  # https://github.com/hashicorp/vault/issues/18648 +
+  # https://web.dev/cross-origin-isolation-guide/.
+  #
+  # The lost COOP isolation is bounded: every host here is admin-only
+  # behind Talon IAP, serves no third-party content, and has no
+  # SharedArrayBuffer / high-precision timer attack surface. The
+  # operator-friction cost (broken sign-in) strictly dominates the
+  # COOP risk reduction for these specific hosts.
+  #
+  # Empty / unset = no carve-out. List exact hostnames; no wildcards.
+  # ─────────────────────────────────────────────────────────────────
+  skipCOOPHosts: []
+
+  # ─────────────────────────────────────────────────────────────────
+  # Streaming-revocation webhook — POST /admin/revoke
+  # (Tier-1 Gap 2 + Gap 4 SIEM unification).
+  #
+  # Empty allowedIdentities = endpoint disabled (returns 503).
+  # The list is the full Linkerd SPIFFE identity of every caller
+  # subsystem permitted to revoke sessions:
+  #   - falcon-id     — server-side hooks for user.disabled,
+  #                     groups.changed, oauth.token.revoked.
+  #   - wazuh-ar-reconciler — SIEM AR pipeline; revokes the offending
+  #                     user's sessions when an AR rule matches a
+  #                     credential-abuse Falco / Wazuh event.
+  #   - falco-talon   — runtime-security response engine, future.
+  #
+  # Production values land in the the GitOps repository overlay, NOT
+  # here — keep the chart default empty so a stray `helm install`
+  # doesn't silently enable it without operator-curated allow-list.
+  # ─────────────────────────────────────────────────────────────────
+  revokeWebhook:
+    allowedIdentities: []
+    # Production: 100 with burst 200. 0 disables the limit (testing
+    # only — would expose the endpoint to a misbehaving caller flood).
+    rateLimitPerSec: 100
+
+# ---------------------------------------------------------------------------
+# Service / serviceAccount
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    https: 8443
+    # Optional alias port that targets the same `https` containerPort
+    # as `service.ports.https`. Enables in-cluster clients to reach
+    # Talon over the default HTTPS port 443 without rewriting the
+    # JWKS URL to embed `:8443`. Pair with the CoreDNS rewrite for
+    # `internal.example.com → talon-talon.talon.svc.cluster.local`
+    # (<gitops-bootstrap-repo> addons/coredns-harbor-rewrite.yaml). Set
+    # to null/omit to disable the alias port; the chart only renders
+    # the port when truthy. Diagnosed live 2026-05-13 — admin-tier
+    # frontends (falcon-admin, platform-admin, hexx-*) hit ECONNRESET
+    # at JWKS prefetch because the CoreDNS-rewritten Service had no
+    # port 443 listener.
+    httpsAlias: 443
+    metrics: 9090
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Secrets — ExternalSecret projection from Vault
+# ---------------------------------------------------------------------------
+externalSecrets:
+  # Cookie encryption key (AES-256-GCM, ADR 0002 §6).
+  cookieEncryptKey:
+    enabled: true
+    secretStoreRef: vault-backend
+    vaultKey: platform/prod/talon/cookie-encrypt-key
+    fields:
+      - vaultProperty: key
+        secretKey: cookie-encrypt-key
+  # OIDC client credentials, written by ServiceClientClaim talon-oauth.
+  # Path follows the SCC convention: platform/{environment}/{service}/oauth.
+  oidcClient:
+    enabled: true
+    secretStoreRef: vault-backend
+    vaultKey: platform/prod/talon/oauth
+    fields:
+      - vaultProperty: client_id
+        secretKey: oidc-client-id
+      - vaultProperty: client_secret
+        secretKey: oidc-client-secret
+  # Harbor pull creds. Vault path holds {robot_username, robot_password};
+  # ESO template builds the dockerconfigjson from those two fields.
+  harborPull:
+    enabled: true
+    secretStoreRef: vault-backend
+    vaultKey: platform/prod/talon/harbor-pull
+    registry: internal.example.com
+  # IAP identity-token RS256 signing key (gated by iapIdentityToken.enabled
+  # at the top level — see below). DEDICATED key per NIST SP 800-57 §5.2
+  # — do NOT reuse cookieEncryptKey. Generation: `openssl genrsa -out
+  # key.pem 2048 && vault kv put example/platform/talon/iap-identity-key
+  # key=@key.pem`. Rotate by replacing the Vault value.
+  iapIdentityKey:
+    enabled: true
+    secretStoreRef: vault-backend
+    vaultKey: platform/prod/talon/iap-identity-key
+    # Steady state: only `key` is projected (the active signing PEM).
+    # During a rotation, add a second entry:
+    #   - vaultProperty: key_previous
+    #     secretKey:    key_previous
+    # then `vault kv patch` writes the OLD key into `key_previous`,
+    # ESO projects both, Talon publishes both kids on JWKS for the
+    # ~6-minute overlap window. After the window, remove this entry
+    # and roll Talon again. See ADR 0005 for the full runbook.
+    fields:
+      - vaultProperty: key
+        secretKey: key
+
+# ---------------------------------------------------------------------------
+# IAP identity-token (RS256 JWT in X-Talon-Identity-Token).
+# ---------------------------------------------------------------------------
+# Phase A (default true, additive): Talon stamps the signed JWT
+# alongside the unsigned X-Talon-* convenience headers; SDK verifiers
+# accept either. Phase B (later MR): SDK refuses requests without a
+# verified JWT, removing the unsigned-header fallback.
+#
+# Set enabled: false to revert to unsigned-only headers (useful for
+# local dev / test rigs where the Vault path doesn't exist).
+iapIdentityToken:
+  enabled: true
+  # ASVS 5.0 V9 — fleet-wide fail-closed floor for identity-token minting.
+  # false (default): a route whose signed X-Talon-Identity-Token cannot be
+  # minted proxies with the unsigned X-Talon-* fallback (fail open — the
+  # Phase A/B transitional posture while downstreams adopt the SDK verifier).
+  # true: EVERY route denies 5xx on a mint failure, and per-route knobs can
+  # only tighten above this floor. Drive the migration by flipping routes on
+  # individually via TalonRoute.spec.requireSignedIdentityToken, then trip
+  # this once the LAST downstream is verifying signed tokens. Wires
+  # TALON_REQUIRE_SIGNED_IDENTITY_TOKEN. See
+  # docs/architecture/0005-iap-identity-token.md §"Fail-closed minting".
+  requireSigned: false
+
+# ---------------------------------------------------------------------------
+# Phase 7.1 — Envoy ext_authz gRPC listener (envoy.service.auth.v3.
+# Authorization). Optional; when enabled, exposes a gRPC port that data
+# planes (Envoy Gateway, Istio, APISIX via ext-plugin, Cilium PoC) call
+# per request instead of the HTTP /auth/verify subrequest. Both surfaces
+# coexist; APISIX migrates via a separate the GitOps repository MR (Phase 7.2).
+# Linkerd MeshTLS terminates the transport; no per-listener TLS plumbing.
+# ---------------------------------------------------------------------------
+extAuthz:
+  enabled: false
+  port: 9001
+  # Phase 7.2 — allow-list of ServiceAccounts permitted to call the
+  # ext_authz Service. Each entry binds a Linkerd MeshTLSAuthentication
+  # + AuthorizationPolicy onto the extauthz Server CR.
+  #
+  # Fail-closed by default: empty list = NO callers admitted (the
+  # Service exists but every caller is denied at the Linkerd layer).
+  # Operators MUST explicitly enumerate every data plane that needs
+  # to consume the PDP — typically:
+  #
+  #   allowedCallers:
+  #     - { name: apisix, namespace: apisix }             # customer-tier PEP
+  #     - { name: ingress-gateway, namespace: istio-system }  # future Istio
+  #
+  # Mirrors the Envoy ext_authz canonical pattern: every PEP that
+  # delegates auth to a shared PDP is enumerated at the PDP side.
+  # Adding a new PEP = a values.yaml edit; no Talon binary roll.
+  allowedCallers: []
+
+# ---------------------------------------------------------------------------
+# Phase 6a.2 — CRD conversion webhook for TalonRoute v1alpha1 ↔ v1beta1.
+# Optional; when enabled, the chart provisions a cert-manager Certificate
+# + Service for the webhook, and the CRD's spec.conversion is rendered as
+# `strategy: Webhook` with cert-manager injecting the caBundle.
+#
+# When disabled, the CRD ships with `strategy: None` and only v1alpha1
+# CRs can be authored. v1beta1 reads return 415 until the webhook lands.
+#
+# Rollback: patch the CRD's spec.conversion to None imperatively;
+# v1alpha1 keeps serving without disruption.
+# ---------------------------------------------------------------------------
+conversionWebhook:
+  enabled: false
+  issuer:
+    # `example-tenant` is the production cert-manager ClusterIssuer
+    # the rest of the talon chart already uses (templates/certificate.yaml
+    # for talon-talon-tls). `vault-pki-leaf` was the original Phase 6a.2
+    # default but its live binding points at the linkerd-webhook Vault
+    # role — wrong tenant for talon certs (`pki_root/sign/linkerd-webhook`
+    # rejects the request with "the common_name field is required").
+    # example-tenant binds the proper Vault PKI role for general
+    # internal certs (verified 2026-06-01 live against talon-talon-tls
+    # which is the existing in-production reference).
+    kind: ClusterIssuer
+    name: example-tenant
+  port: 9443
+
+# Aliased top-level flag the CRD template (in crds/) consumes. Helm
+# convention: crds/ templates do NOT see .Values directly — set this at
+# the top level so the CRD's spec.conversion can branch on it. Mirrors
+# conversionWebhook.enabled; keep in sync.
+enableConversionWebhook: false
+
+# ---------------------------------------------------------------------------
+# Traefik IngressRoute
+# ---------------------------------------------------------------------------
+ingress:
+  # The auth host (Talon's own UI: /auth/start, /auth/callback, /auth/logout).
+  authHost: internal.example.com
+  # Per-host protected admin routes are listed here. Each entry generates a
+  # Traefik IngressRoute on .host that forwards to the Talon Service; Talon
+  # then policy-checks and proxies internally to .upstream.
+  protectedHosts: []
+    # Phase 1 pilot example (commented until Phase 1 lands):
+    # - host: internal.example.com
+    #   upstream:
+    #     service: prometheus-server.monitoring.svc.cluster.local
+    #     port: 9090
+    #   permission: viewer
+    #   continuousVerifyMinutes: 15
+
+  ingressClassName: traefik-internal
+  # TLS via cert-manager wildcard cluster issuer; Secret co-located with each
+  # IngressRoute namespace if traefik-multi-instance picks the wrong LB
+  # (internal engineering notes).
+  tlsSecretName: ops-hexxlock-com-tls
+
+# ---------------------------------------------------------------------------
+# Service-token Bearer middleware (talon-service-tokens Phase 3)
+# ---------------------------------------------------------------------------
+# When enabled, Talon accepts a Falcon-ID-issued client_credentials JWT
+# in the Authorization: Bearer header on any protected route whose
+# Server CR / ingress.protectedHosts entry sets authMode=bearer or
+# authMode=both. Cookie-only hosts pay zero extra work (the middleware
+# short-circuits before the JWKS lookup).
+#
+# Default OFF cluster-wide. The pilot consumer (ArgoCD repo-server)
+# flips it true via a per-deployment overlay. See
+# docs/specs/talon-service-tokens.md for the migration plan.
+svctoken:
+  enabled: false
+  jwksUrl: https://id.hexxlock.com/.well-known/jwks.json
+  issuer: https://id.hexxlock.com
+  # In-memory LRU size for jti replay-cache. Zero DISABLES replay
+  # protection — which is the correct configuration for the JWT
+  # access-token model (RFC 9068 §3 explicitly designs access tokens
+  # to be replayed across many requests within their TTL).
+  #
+  # Tombstone-style replay protection is appropriate for one-shot JWT
+  # bearer client assertions (RFC 7521) but breaks the long-lived
+  # workload token use case Phase 4.5 ships — ArgoCD repo-server mints
+  # one JWT per ~55min and reuses it across every git clone + API
+  # call in that window. With the cache enabled at any non-zero size,
+  # the second use of a jti rejects as a replay even though sig + exp
+  # + aud + iss + scope all still validate. Phase 4.5 verification
+  # 2026-05-29 caught this — log line "svctoken: jti replay" on every
+  # 2nd+ request of the same JWT.
+  #
+  # Recommended values:
+  #   - 0 — disable. Correct for svctoken access tokens.
+  #   - >0 — only valid if the JWT contract is one-shot-per-request,
+  #          which Talon does not currently issue or accept.
+  #
+  # Multi-pod Talon deployments that genuinely want replay protection
+  # (single-use assertions) need a Redis-backed shared ReplayCache —
+  # the in-memory LRU is per-process so a multi-pod set would let a
+  # stolen jti be re-used once per pod. See Phase 6 hardening.
+  replayCacheSize: 0
+
+  # Phase 5+ federated trust — secondary issuers whose JWTs Talon
+  # accepts on routes with authMode=bearer_or_federated_passthrough.
+  # Empty list (default) = federated trust disabled, verifier behaves
+  # exactly as before.
+  #
+  # Each entry MUST set:
+  #   - issuer:               exact `iss` claim match (case-sensitive).
+  #                           Harbor's is "harbor-token-issuer" (a
+  #                           literal label, NOT a URL).
+  #   - staticPublicKeyPem:   PEM-encoded RSA public key (PKIX `BEGIN
+  #                           PUBLIC KEY` or PKCS#1 `BEGIN RSA PUBLIC
+  #                           KEY`). Extract from a Harbor pod with
+  #                           `openssl rsa -in /etc/core/private_key.pem
+  #                           -pubout`. Reserved jwksUrl field is for
+  #                           a future MR — currently NOT supported.
+  # Optional:
+  #   - allowedHosts: []      host-prefix scoping (confused-deputy
+  #                           guard). Empty = applies to every route
+  #                           running the federated AuthMode.
+  #
+  # Architecture: mirrors Envoy jwt_authn providers map / Istio
+  # RequestAuthentication.jwtRules[] / Ory Oathkeeper trusted_issuers.
+  # Envoy CVE-2021-21378 invariant preserved: unknown iss → 401, never
+  # passthrough. See internal/svctoken/federated.go for the full
+  # safety semantics + 2026-05-30 deep-research findings.
+  #
+  # Live use case 2026-05-30 — Harbor:
+  #   federatedIssuers:
+  #     - issuer: harbor-token-issuer
+  #       staticPublicKeyPem: |
+  #         -----BEGIN PUBLIC KEY-----
+  #         MIIBIj...
+  #         -----END PUBLIC KEY-----
+  #       allowedHosts:
+  #         - internal.example.com
+  federatedIssuers: []
+
+# ---------------------------------------------------------------------------
+# Linkerd policy (mTLS)
+# ---------------------------------------------------------------------------
+linkerd:
+  # MeshTLSAuthentication for Talon's identity, consumable by upstream
+  # AuthorizationPolicies that want to allow only the Talon SA.
+  identity:
+    enabled: true
+    serviceAccountName: ""   # default: talon SA
+  # Inbound AuthorizationPolicy (Phase 4). Default audit, not enforce.
+  inbound:
+    enabled: false   # Phase 4 enables enforce
+    mode: audit
+
+# ---------------------------------------------------------------------------
+# OIDC Back-Channel Logout 1.0 receiver
+# ---------------------------------------------------------------------------
+backchannelLogout:
+  # When linkerd.inbound.enabled=true, allow Falcon-ID to call
+  # https://talon-talon.talon.svc:8443/auth/backchannel-logout directly
+  # over Linkerd mTLS, in addition to the public-URL path through
+  # traefik-internal. Direct path is more reliable than NAT reflection
+  # for in-cluster delivery (memory internal engineering notes).
+  directMeshAllow:
+    enabled: true
+    callerServiceAccount:
+      name: falcon-id-falcon-id
+      namespace: falcon-id
+
+# ---------------------------------------------------------------------------
+# TLS
+# ---------------------------------------------------------------------------
+# cert-manager Certificate for the in-pod :8443 TLS listener. Browser
+# traffic terminates TLS at traefik-internal; this cert just needs to be
+# valid enough for Go's TLS server. example-tenant ClusterIssuer is
+# the right tier-1 source.
+tls:
+  issuer:
+    name: example-tenant
+    kind: ClusterIssuer
+
+# ---------------------------------------------------------------------------
+# HPA
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false   # Phase 0: replicas:0 → no HPA; Phase 1 enables
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 60
+
+# ---------------------------------------------------------------------------
+# SpiceDB
+# ---------------------------------------------------------------------------
+# t-582 (2026-09-07/08): a dedicated `spicedb-schema` Argo CD
+# Application (chart in hexxlock/falcon-id.git:deploy/helm/
+# spicedb-schema, synced independently of both Talon and falcon-id)
+# is now the cluster's ONLY WriteSchema caller. Three independent
+# writers previously raced the same global SpiceDB instance —
+# falcon-id's PostSync hook, Talon's own PreSync hook (formerly
+# templates/spicedb-seed-job.yaml, now deleted), and Talon's
+# `EnsureSchema()` go-embed call at every pod's startup — against
+# SpiceDB's WriteSchema RPC, which REPLACES the whole schema rather
+# than merging it. Whichever call landed last silently destroyed the
+# other two writers' definitions; that's exactly how a routine HPA
+# scale-up reverted a live 45-definition schema back down to Talon's
+# stale 3-definition copy with zero ArgoCD sync or CI pipeline
+# involved. Full incident record on board row t-582.
+#
+# Talon's `EnsureSchema()` (internal/spicedb/client.go) now only
+# calls ReadSchema at startup and asserts its required definitions
+# (user/group/talon_route) are present — it never writes. Per-route
+# relationship writes still go through the TalonRoute reconciler
+# (ADR 0003 §5.1); those are unaffected — SpiceDB's WriteRelationships
+# is a per-tuple TOUCH/DELETE, not a whole-document replace.
+#
+# enabled: false flips off the entire SpiceDB integration (PE falls
+# back to role-only filter, schema verification skipped, ExternalSecret
+# not created). Useful for dev / cluster without a SpiceDB.
+spicedb:
+  enabled: true
+  endpoint: spicedb.spicedb.svc.cluster.local:50051
+  # Secret materialised in this namespace from the upstream Vault
+  # path the spicedb chart's ExternalSecret reads. Single source of
+  # truth — same PSK the SpiceDB pods themselves authenticate with.
+  pskSecretName: spicedb-psk
+
+# ---------------------------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  port: metrics
+  path: /metrics
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+probes:
+  liveness:
+    httpGet:
+      path: /healthz
+      port: https
+      scheme: HTTPS
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    httpGet:
+      path: /readyz
+      port: https
+      scheme: HTTPS
+    initialDelaySeconds: 3
+    periodSeconds: 5
