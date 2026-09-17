@@ -1,0 +1,17 @@
+{{- if .Values.config.ztna.defaultPolicy.enabled }}
+# Global ZTNA baseline OPA Rego, mounted into the Talon pod and wired via
+# TALON_DEFAULT_POLICY_REGO_FILE (see deployment.yaml). Applied to every
+# protected route with no own TalonRoute.spec.policyRego → device-posture
+# enforcement is secure-by-default instead of opt-in per app. Source of
+# truth: files/ztna_baseline.rego (mirror of docs/policy/ztna/ztna_baseline.rego).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "talon.fullname" . }}-ztna-baseline
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+data:
+  baseline.rego: |
+{{ .Files.Get "files/ztna_baseline.rego" | indent 4 }}
+{{- end }}

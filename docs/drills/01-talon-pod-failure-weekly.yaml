@@ -1,0 +1,73 @@
+# Drill 01 — Talon controller pod-failure (weekly)
+#
+# Per ADR 0042 §9.c. Exercises the IAP cache-loss path:
+#
+# The Talon controller holds in-pod cached state for posture verifier
+# results, recent Rego decisions, and per-route policy bundles. Killing
+# ONE of N controller pods forces:
+#   (a) the Deployment controller to schedule a replacement (target
+#       ready in < 30s — verified via PodReadyToStartContainers signal),
+#   (b) the next requests to bypass the dead pod's cache and warm up
+#       a fresh in-memory cache (target sub-second per route).
+#
+# Failure modes this drill catches:
+#   - If the Deployment isn't auto-recovering (e.g. PDB blocks all
+#     evictions because too many pods are already unhealthy)
+#   - If a single missing pod causes user-visible 5xx (would indicate
+#     no graceful-shutdown wiring in the Talon controller)
+#   - If the warm-up window exceeds the 1s p99 budget for posture
+#     verification (would indicate the in-pod cache is too aggressive
+#     and bench warmup is unrealistically lazy)
+#
+# Schedule: weekly Sunday 02:00 UTC. Sunday early-morning is the
+# lowest-traffic window. Weekly cadence catches regressions in <7d
+# without overloading the on-call rotation.
+#
+# Target SELECTOR is anchored to the talon controller's standard
+# label set; it explicitly excludes any label that would match prod
+# workloads — the Talon controller IS singleton-cluster-wide, but
+# this drill targets non-prod tenants by namespace selector.
+#
+# REF: chaos-mesh.org/docs/define-chaos-experiment-scope/
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: talon-controller-pod-failure-weekly
+  namespace: chaos-mesh
+  labels:
+    drill.hexxlock.com/family: ztna-phase9
+    drill.hexxlock.com/severity: low
+    drill.hexxlock.com/adr: "0042"
+spec:
+  # Sundays at 02:00 UTC
+  schedule: "0 2 * * 0"
+  # Keep the last 5 firings visible for post-mortem; older runs
+  # auto-prune so `kubectl get podchaos -n chaos-mesh` stays useful.
+  historyLimit: 5
+  # Allow concurrent fires to be skipped — if last week's drill
+  # didn't finish for some reason, do NOT pile a new one on top.
+  concurrencyPolicy: Forbid
+  type: PodChaos
+  podChaos:
+    action: pod-failure
+    # The chaos lasts 60s — long enough to validate the
+    # Deployment-controller recovery + the next-request warm-up,
+    # short enough to not exceed the drill telemetry window.
+    duration: "60s"
+    mode: one  # ONE pod, not all-of-N
+    selector:
+      namespaces:
+        - talon
+      labelSelectors:
+        app.kubernetes.io/name: talon
+        app.kubernetes.io/component: controller
+      # Explicit NOT-prod gate. Prod-tenant routes are served by the
+      # same Talon controller binary today, so the cluster-wide
+      # NetworkChaos can hit prod sessions. Until per-tenant Talon
+      # sharding ships (tracked separately), the pod-failure mode
+      # has the smallest blast radius — it tests the recovery path
+      # without sustained traffic disruption.
+      expressionSelectors:
+        - key: drill.hexxlock.com/exclude
+          operator: DoesNotExist

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<!--
+  Talon clientless SQL console (ADR 0044 Phase 4).
+
+  A dumb in-browser SQL grid: it opens the broker WebSocket at /access/db,
+  sends statements as {"type":"query","sql":...} TEXT frames (matching
+  internal/accessbroker/dbrelay.go's decodeDBClientFrame), and renders the
+  {"type":"result"|"error"|"ready"} envelopes the broker replies with. The
+  browser interprets NO SQL wire protocol — jess (via the broker) owns the
+  pgwire/MySQL protocol + the per-statement WORM recording.
+
+  No third-party JS: the grid is plain DOM, so this page has zero CDN /
+  supply-chain dependency (the access zone serves unmanaged devices).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HexxLock Access — SQL Console</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e14; color: #c9d1d9; font-family: ui-monospace, monospace; }
+    #status { padding: 6px 10px; font-size: 13px; background: #161b22; border-bottom: 1px solid #21262d; }
+    #status.ok { color: #3fb950; }
+    #status.err { color: #f85149; }
+    #editor { display: flex; gap: 8px; padding: 8px; background: #0d1117; border-bottom: 1px solid #21262d; }
+    #sql { flex: 1; min-height: 56px; background: #010409; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px; font: 14px ui-monospace, monospace; resize: vertical; }
+    #run { padding: 8px 16px; background: #238636; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    #run:disabled { background: #30363d; cursor: not-allowed; }
+    #out { padding: 8px; overflow: auto; }
+    .banner { color: #d29922; margin: 6px 0; font-size: 13px; }
+    .cmd { color: #58a6ff; margin: 6px 0; font-size: 13px; }
+    .err { color: #f85149; margin: 6px 0; white-space: pre-wrap; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 4px; }
+    th, td { border: 1px solid #21262d; padding: 4px 8px; text-align: left; vertical-align: top; }
+    th { background: #161b22; position: sticky; top: 0; }
+    td.null { color: #6e7681; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div id="status">connecting…</div>
+  <div id="editor">
+    <textarea id="sql" placeholder="SELECT … (Ctrl/Cmd+Enter to run)" spellcheck="false"></textarea>
+    <button id="run" disabled>Run</button>
+  </div>
+  <div id="out"></div>
+
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      const sqlEl = document.getElementById('sql');
+      const runEl = document.getElementById('run');
+      const outEl = document.getElementById('out');
+      function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ''; }
+
+      // Carry the engine/target selection from the page URL into the broker
+      // WebSocket query string. The broker's DBTargetResolver reads
+      // ?engine=&target=&db= (queryDBTargetResolver) in the scaffold path.
+      const pageParams = new URLSearchParams(window.location.search);
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsParams = new URLSearchParams();
+      for (const k of ['engine', 'target', 'db']) {
+        if (pageParams.get(k)) wsParams.set(k, pageParams.get(k));
+      }
+      const wsURL = proto + '//' + window.location.host + '/access/db?' + wsParams.toString();
+
+      const ws = new WebSocket(wsURL);
+
+      function appendEl(el) { outEl.insertBefore(el, outEl.firstChild); }
+
+      function renderResult(rs) {
+        if (rs.columns && rs.columns.length) {
+          if (rs.truncated) {
+            const b = document.createElement('div');
+            b.className = 'banner';
+            b.textContent = '⚠ result truncated by the broker policy limit';
+            appendEl(b);
+          }
+          const table = document.createElement('table');
+          const thead = document.createElement('thead');
+          const htr = document.createElement('tr');
+          rs.columns.forEach(function (c) {
+            const th = document.createElement('th'); th.textContent = c; htr.appendChild(th);
+          });
+          thead.appendChild(htr); table.appendChild(thead);
+          const tbody = document.createElement('tbody');
+          (rs.rows || []).forEach(function (row) {
+            const tr = document.createElement('tr');
+            row.forEach(function (cell) {
+              const td = document.createElement('td');
+              if (cell === null) { td.textContent = 'NULL'; td.className = 'null'; }
+              else { td.textContent = cell; }
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          appendEl(table);
+        } else {
+          const d = document.createElement('div');
+          d.className = 'cmd';
+          d.textContent = (rs.command || 'OK') + (rs.rowsAffected >= 0 ? ' (' + rs.rowsAffected + ' rows)' : '');
+          appendEl(d);
+        }
+      }
+
+      function renderError(msg) {
+        const d = document.createElement('div'); d.className = 'err'; d.textContent = 'ERROR: ' + msg; appendEl(d);
+      }
+
+      function send() {
+        const sql = sqlEl.value.trim();
+        if (!sql || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ type: 'query', sql: sql }));
+      }
+
+      runEl.onclick = send;
+      sqlEl.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+      });
+
+      ws.onopen = function () { setStatus('connected — ' + (pageParams.get('target') || 'session'), 'ok'); };
+      ws.onmessage = function (ev) {
+        let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+        if (m.type === 'ready') { runEl.disabled = false; setStatus('ready — ' + (pageParams.get('target') || 'session'), 'ok'); sqlEl.focus(); }
+        else if (m.type === 'result' && m.result) { renderResult(m.result); }
+        else if (m.type === 'error') { renderError(m.error || 'unknown error'); }
+      };
+      ws.onclose = function (ev) {
+        runEl.disabled = true;
+        setStatus('disconnected' + (ev.reason ? ' — ' + ev.reason : '') + ' (code ' + ev.code + ')', 'err');
+      };
+      ws.onerror = function () { setStatus('connection error', 'err'); };
+    })();
+  </script>
+</body>
+</html>

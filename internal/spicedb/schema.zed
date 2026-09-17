@@ -1,0 +1,40 @@
+// Talon's required SpiceDB definitions (ADR 0001 §5.b) — READ-ONLY.
+//
+// an internal incident (2026-09-07/08): this file is NEVER passed to WriteSchema.
+// SpiceDB's WriteSchema RPC REPLACES the entire schema rather than
+// merging it; this file, Talon's now-deleted PreSync hook, and
+// falcon-id's now-deleted PostSync hook were three independent
+// writers racing that RPC against the same global SpiceDB instance,
+// and whichever landed last silently destroyed the other two's
+// definitions. A routine HPA scale-up starting a fresh Talon pod
+// (which called WriteSchema with exactly this file, via
+// internal/spicedb/client.go's old EnsureSchema) reverted a live
+// 45-definition schema back down to this file's 3 definitions —
+// with zero ArgoCD sync or CI pipeline involved. Full incident
+// record on board row an internal incident.
+//
+// The dedicated `spicedb-schema` Argo CD Application (chart in
+// hexxlock/falcon-id.git:deploy/helm/spicedb-schema, synced
+// independently of both Talon and falcon-id) is now the cluster's
+// ONLY WriteSchema caller; its files/spicedb.zed is the canonical
+// union of every definition the cluster needs. This copy exists
+// solely so internal/spicedb/client.go's EnsureSchema can verify at
+// startup that the live schema still contains what Talon requires —
+// it must be kept in sync with (a subset of) that canonical copy;
+// a CI drift check between the two is a natural an internal incident follow-up, not
+// yet implemented.
+definition user {}
+
+definition group {
+    relation member: user
+}
+
+definition talon_route {
+    relation viewer: user | group#member
+    relation editor: user | group#member
+    relation admin:  user | group#member
+
+    permission access = viewer + editor + admin
+    permission write  = editor + admin
+    permission manage = admin
+}

@@ -1,0 +1,430 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "talon.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+  annotations:
+    {{- /*
+      Stakater Reloader — auto-roll the Deployment when any Secret /
+      ConfigMap referenced in the pod template changes. Without this,
+      a rotation of `talon-oidc-client` (the OIDC code-exchange
+      credentials, written by the platform's ServiceClient provisioner
+      via Crossplane → falcon-id → Vault → ESO) leaves the running
+      pod with the stale secret in env vars while the k8s Secret on
+      disk has the new value. Every /oauth/token POST then 400s with
+      `invalid client secret` (root cause of the 2026-04-30 ArgoCD /
+      Prometheus IAP login outage).
+
+      Reloader watches Secret/CM hashes per-deployment and triggers a
+      rollout when they change — eliminating the stale-env desync
+      class entirely. The Reloader operator is already deployed
+      cluster-wide (namespace `reloader`); this annotation is the
+      opt-in side of the contract.
+
+      `reloader.stakater.com/auto: "true"` watches every Secret and
+      ConfigMap referenced by the pod template (envFrom, secretKeyRef,
+      configMapKeyRef, volumes). For finer-grained control consider
+      `secret.reloader.stakater.com/reload: "talon-oidc-client"`; we
+      go with auto here so future referenced Secrets (a new ESO entry,
+      a TLS secret) automatically participate.
+
+      Doc: https://github.com/stakater/Reloader#how-to-use-reloader
+    */}}
+    reloader.stakater.com/auto: "true"
+    {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # Keep only 2 ReplicaSet history entries instead of the default 10.
+  # Talon is rolled frequently by image-updater (every 40-char SHA bump
+  # from CI lands here within minutes) and by Reloader on Secret/CM
+  # change — at default revisionHistoryLimit=10, the talon ns ends up
+  # with 11 ReplicaSets at any time, all but one with replicas=0.
+  # Verified live 2026-05-09: 11 RS in talon, 10 zero-replica orphans
+  # using image tags whose cosign provenance attestations are missing
+  # or invalid (stale SLSA from CI changes). kyverno-reports-controller
+  # was burning ~780m CPU continuously running the verify-talon-image-
+  # provenance ClusterPolicy across all 11 RS in background. Dropping
+  # to 2 cuts the scan workload ~80% AND keeps a working rollback
+  # target. Per CI standing decision (memory internal engineering notes
+  # tier1_2026_04_27), the active image's provenance is the only one
+  # required to be checked at admission; old RS attestations are
+  # purely informational.
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit | default 2 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "talon.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "talon.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "talon.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: talon
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.ports.https }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.ports.metrics }}
+              protocol: TCP
+            {{- if .Values.extAuthz.enabled }}
+            # Phase 7.2 — Envoy ext_authz v3 gRPC listener. Backs the
+            # talon-extauthz Service so APISIX (and any future data
+            # plane: Envoy/Istio/Higress) can reach the shared PDP via
+            # canonical envoy.service.auth.v3.Authorization wire format.
+            - name: extauthz
+              containerPort: {{ .Values.extAuthz.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.conversionWebhook.enabled }}
+            # Phase 6a.2 — CRD conversion webhook. Targeted by
+            # talon-conversion-webhook Service from the apiserver
+            # for v1alpha1↔v1beta1 ConversionReview.
+            - name: conv-webhook
+              containerPort: {{ .Values.conversionWebhook.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TALON_EXTERNAL_URL
+              value: {{ .Values.config.externalUrl | quote }}
+            - name: TALON_COOKIE_DOMAIN
+              value: {{ .Values.config.cookieDomain | quote }}
+            - name: TALON_OIDC_ISSUER_URL
+              value: {{ .Values.config.issuerUrl | quote }}
+            - name: TALON_OIDC_INTERNAL_ISSUER_URL
+              value: {{ .Values.config.internalIssuerUrl | quote }}
+            - name: TALON_OIDC_SCOPES
+              value: {{ .Values.config.oidcScopes | quote }}
+            - name: TALON_REQUIRED_ROLE
+              value: {{ .Values.config.requiredRole | quote }}
+            - name: TALON_ROLE_GATE_MODE
+              value: {{ .Values.config.roleGateMode | quote }}
+            {{- with .Values.config.protectedHostSuffixes }}
+            - name: TALON_PROTECTED_HOST_SUFFIXES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.clientlessHostSuffixes }}
+            - name: TALON_CLIENTLESS_HOST_SUFFIXES
+              value: {{ . | quote }}
+            {{- end }}
+            - name: TALON_REDIS_ADDR
+              value: {{ .Values.config.redisAddr | quote }}
+            {{- if .Values.spicedb.enabled }}
+            - name: TALON_SPICEDB_ADDR
+              value: {{ .Values.spicedb.endpoint | quote }}
+            - name: TALON_SPICEDB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.spicedb.pskSecretName }}
+                  key: presharedkey
+            {{- end }}
+            - name: TALON_SESSION_TTL_SECONDS
+              value: {{ .Values.config.sessionTtlSeconds | quote }}
+            - name: TALON_SESSION_REFRESH_SECONDS
+              value: {{ .Values.config.sessionRefreshSeconds | quote }}
+            - name: TALON_CONTINUOUS_VERIFY_MINUTES
+              value: {{ .Values.config.continuousVerifyMinutes | quote }}
+            - name: TALON_LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: TALON_LOG_FORMAT
+              value: {{ .Values.config.logFormat | quote }}
+            {{- if .Values.config.caep.enabled }}
+            # CAEP 1.0 SET receiver (ADR 0011 Part A).
+            - name: TALON_CAEP_ENABLED
+              value: "true"
+            - name: TALON_CAEP_TRANSMITTER_ISSUER
+              value: {{ .Values.config.caep.transmitterIssuer | quote }}
+            - name: TALON_CAEP_AUDIENCE
+              value: {{ .Values.config.caep.audience | quote }}
+            {{- if .Values.config.caep.transmitterJwksUrl }}
+            - name: TALON_CAEP_TRANSMITTER_JWKS_URL
+              value: {{ .Values.config.caep.transmitterJwksUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.config.posture.enabled }}
+            # ZTNA device-posture verifier (ADR 0040 / 0011). Verifies the
+            # X-Talon-Posture JWS on routes that declare a policyRego; routes
+            # without one are unaffected. trustedIssuers + audience are
+            # REQUIRED when enabled (the binary fails fast otherwise), so the
+            # chart guards them under the same `enabled` flag.
+            - name: TALON_POSTURE_ENABLED
+              value: "true"
+            - name: TALON_POSTURE_TRUSTED_ISSUERS
+              value: {{ .Values.config.posture.trustedIssuers | join "," | quote }}
+            - name: TALON_POSTURE_AUDIENCE
+              value: {{ .Values.config.posture.audience | quote }}
+            {{- if .Values.config.posture.maxAgeSeconds }}
+            - name: TALON_POSTURE_MAX_AGE_SECONDS
+              value: {{ .Values.config.posture.maxAgeSeconds | quote }}
+            {{- end }}
+            {{- if .Values.config.posture.jwksUrl }}
+            # The posture issuer's public JWKS (https://posture.hexxlock.com)
+            # is Envoy device-cert-mTLS-gated and unreachable from this pod;
+            # point the verifier at the in-cluster posture-signer Service JWKS.
+            - name: TALON_POSTURE_JWKS_URL
+              value: {{ .Values.config.posture.jwksUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- /* Static protected-host config (Phase 1). Phase 2's
+                   TalonRoute reconciler watches a CRD and registers
+                   upstreams dynamically; this env var stays as
+                   Phase 1 break-glass / pilot wiring.
+
+                   Phase 3 (talon-service-tokens): each entry may add
+                   `authMode: cookie|bearer|both` to opt the host into
+                   the Bearer JWT path. Default empty = cookie-only
+                   for back-compat. */}}
+            {{- if .Values.ingress.protectedHosts }}
+            - name: TALON_PROTECTED_HOSTS_JSON
+              value: |
+                {{- $list := list -}}
+                {{- range .Values.ingress.protectedHosts }}
+                {{- $entry := dict "host" .host "upstream" (printf "%s:%v" .upstream.service .upstream.port) "permission" (default "viewer" .permission) -}}
+                {{- if .upstream.scheme -}}
+                {{- $_ := set $entry "scheme" .upstream.scheme -}}
+                {{- end -}}
+                {{- if .authMode -}}
+                {{- $_ := set $entry "authMode" .authMode -}}
+                {{- end -}}
+                {{- $list = append $list $entry }}
+                {{- end }}
+                {{ $list | toJson }}
+            {{- end }}
+            {{- /* talon-service-tokens Phase 3 — feature flag + Falcon-ID
+                   JWKS/issuer for the Bearer middleware. Default OFF;
+                   flip svctoken.enabled in chart values to enable.
+                   See docs/specs/talon-service-tokens.md. */}}
+            - name: TALON_SVCTOKEN_ENABLED
+              value: {{ .Values.svctoken.enabled | default false | quote }}
+            {{- if .Values.svctoken.enabled }}
+            - name: TALON_SVCTOKEN_JWKS_URL
+              value: {{ .Values.svctoken.jwksUrl | quote }}
+            - name: TALON_SVCTOKEN_ISSUER
+              value: {{ .Values.svctoken.issuer | quote }}
+            {{- /* Helm's `default` function treats 0 as empty
+                   (Go zero value) and substitutes the default, so
+                   `default 8192` would silently turn off the operator's
+                   explicit `replayCacheSize: 0` (the value that disables
+                   replay protection — the correct setting for the JWT
+                   access-token model per talon !67 + RFC 9068 §3).
+                   Phase 4.5 verification caught this when 0 in pm
+                   values rendered to 8192 in the deployment env.
+                   Use `dig` instead so 0 passes through. dig returns
+                   8192 only when the key is absent or nil. */}}
+            - name: TALON_SVCTOKEN_REPLAY_CACHE_SIZE
+              value: {{ dig "replayCacheSize" 8192 .Values.svctoken | quote }}
+            {{- /*
+                Phase 5+ federated multi-trust. Empty / unset disables
+                federated trust entirely (verifier unchanged); routes
+                that request authMode=bearer_or_federated_passthrough
+                without any federated issuer configured silently
+                degrade to bearer_or_passthrough semantics.
+
+                Wire format: JSON-serialised list. Each entry has
+                `issuer` (exact iss-claim match), `staticPublicKeyPem`
+                (PEM-encoded RSA pubkey, mandatory unless jwksUrl set
+                — currently jwksUrl is not yet supported), and
+                optional `allowedHosts` (host-prefix scoping for
+                confused-deputy guard). See FederatedIssuerConfig
+                docs in internal/svctoken/federated.go.
+
+                Canonical use case — Harbor Docker Registry v2:
+                  svctoken:
+                    federatedIssuers:
+                      - issuer: harbor-token-issuer
+                        staticPublicKeyPem: |
+                          -----BEGIN PUBLIC KEY-----
+                          MIIBIj...
+                          -----END PUBLIC KEY-----
+                        allowedHosts: [registry.example.com]
+            */ -}}
+            {{- with .Values.svctoken.federatedIssuers }}
+            - name: TALON_SVCTOKEN_FEDERATED_ISSUERS_JSON
+              value: {{ . | toJson | quote }}
+            {{- end }}
+            {{- end }}
+            {{- /*
+                Streaming-revocation webhook (Tier-1 Gap 2 + Gap 4).
+                Empty allowedIdentities (chart default) leaves this env
+                unset; the Talon binary then logs
+                `streaming revocation webhook disabled` and returns 503
+                on the route. The the GitOps repository overlay sets the
+                production allow-list (falcon-id + wazuh-ar-reconciler).
+            */ -}}
+            {{- if .Values.config.revokeWebhook.allowedIdentities }}
+            - name: TALON_REVOKE_WEBHOOK_ALLOWED_IDENTITIES
+              value: {{ join "," .Values.config.revokeWebhook.allowedIdentities | quote }}
+            - name: TALON_REVOKE_WEBHOOK_RATE_LIMIT
+              value: {{ .Values.config.revokeWebhook.rateLimitPerSec | quote }}
+            {{- end }}
+            {{- if .Values.extAuthz.enabled }}
+            # Phase 7.1 — Envoy ext_authz gRPC listener
+            # (envoy.service.auth.v3.Authorization). Empty disables.
+            - name: TALON_LISTEN_EXTAUTHZ
+              value: {{ printf ":%d" (int .Values.extAuthz.port) | quote }}
+            {{- end }}
+            {{- if .Values.conversionWebhook.enabled }}
+            # Phase 6a.2 — CRD conversion webhook HTTPS listener.
+            # Cert defaults to the main TLS material; override
+            # via TALON_CONVERSION_WEBHOOK_{CERT,KEY}_FILE if the
+            # webhook needs a distinct cert.
+            - name: TALON_LISTEN_CONVERSION_WEBHOOK
+              value: {{ printf ":%d" (int .Values.conversionWebhook.port) | quote }}
+            - name: TALON_CONVERSION_WEBHOOK_CERT_FILE
+              value: "/etc/talon/conversion-webhook-tls/tls.crt"
+            - name: TALON_CONVERSION_WEBHOOK_KEY_FILE
+              value: "/etc/talon/conversion-webhook-tls/tls.key"
+            {{- end }}
+            {{- with .Values.config.skipCOOPHosts }}
+            # Hosts whose responses Talon must NOT decorate with the
+            # Cross-Origin-Opener-Policy header. Carve-out for upstreams
+            # whose UI runs popup-based OAuth/OIDC (HashiCorp Vault UI is
+            # the canonical case — see vault#18648 + web.dev/cross-origin-
+            # isolation-guide). The lost COOP isolation is bounded
+            # because every host here is admin-only, behind Talon IAP,
+            # serves no third-party content, and has no SharedArrayBuffer
+            # / high-precision-timer attack surface.
+            - name: TALON_SKIP_COOP_HOSTS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- if .Values.config.ztna.defaultPolicy.enabled }}
+            # Global ZTNA baseline: every route with no own policyRego
+            # inherits this compiled Rego (secure-by-default posture).
+            - name: TALON_DEFAULT_POLICY_REGO_FILE
+              value: /etc/talon/ztna/baseline.rego
+            {{- end }}
+            - name: TALON_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: talon-oidc-client
+                  key: oidc-client-id
+            - name: TALON_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: talon-oidc-client
+                  key: oidc-client-secret
+            - name: TALON_COOKIE_ENCRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: talon-cookie-encrypt-key
+                  key: cookie-encrypt-key
+            {{- if .Values.iapIdentityToken.enabled }}
+            {{- if .Values.iapIdentityToken.requireSigned }}
+            # ASVS 5.0 V9 — fleet-wide fail-closed floor. When true, any route
+            # whose signed X-Talon-Identity-Token cannot be minted denies 5xx
+            # instead of proxying unsigned. Per-route knobs only tighten above
+            # this. Default off preserves the Phase A/B fail-open fallback.
+            - name: TALON_REQUIRE_SIGNED_IDENTITY_TOKEN
+              value: "true"
+            {{- end }}
+            # X-Talon-Identity-Token RS256 signing key. Projected from
+            # Vault path example/platform/talon/iap-identity-key by the
+            # ExternalSecret talon-iap-identity-key (see
+            # templates/externalsecret.yaml). DEDICATED key per
+            # NIST SP 800-57 §5.2 / OWASP ASVS V6.2.1 — DO NOT reuse
+            # the session-encryption key here. Optional in Phase A:
+            # when this Secret is absent, Talon proxies with unsigned
+            # X-Talon-* headers only (the SDK verifier path is a no-op
+            # until the matching JWKS is published).
+            - name: TALON_IAP_SIGNING_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: talon-iap-identity-key
+                  key: key
+                  optional: true
+            # Optional retired-key slot for zero-downtime rotation
+            # (Cloudflare Access N+1 JWKS pattern). Active only during
+            # the ~6-minute overlap window (60s JWT lifetime + 300s
+            # JWKS cache TTL). To enable: add `key_previous` to
+            # externalSecrets.iapIdentityKey.fields in values, sync,
+            # and roll Talon. Empty in steady state — the optional:
+            # true projection keeps Talon happy when the field is
+            # absent. See docs/architecture/0005-iap-identity-token.md.
+            - name: TALON_IAP_PREVIOUS_SIGNING_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: talon-iap-identity-key
+                  key: key_previous
+                  optional: true
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /etc/talon/tls
+              readOnly: true
+            {{- if .Values.config.ztna.defaultPolicy.enabled }}
+            - name: ztna-baseline
+              mountPath: /etc/talon/ztna
+              readOnly: true
+            {{- end }}
+            {{- if .Values.conversionWebhook.enabled }}
+            - name: conversion-webhook-tls
+              mountPath: /etc/talon/conversion-webhook-tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tls
+          secret:
+            secretName: {{ include "talon.fullname" . }}-tls
+            defaultMode: 0400
+        {{- if .Values.config.ztna.defaultPolicy.enabled }}
+        - name: ztna-baseline
+          configMap:
+            name: {{ include "talon.fullname" . }}-ztna-baseline
+        {{- end }}
+        {{- if .Values.conversionWebhook.enabled }}
+        - name: conversion-webhook-tls
+          secret:
+            # cert-manager Certificate `talon-conversion-webhook`
+            # writes to this Secret name (see
+            # templates/conversion-webhook.yaml). Mounted readonly
+            # alongside the main TLS material.
+            secretName: talon-conversion-webhook-tls
+            defaultMode: 0400
+        {{- end }}

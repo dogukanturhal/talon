@@ -1,0 +1,42 @@
+{{- if .Values.extAuthz.enabled }}
+---
+# Phase 7.2 — dedicated Service for the Envoy ext_authz v3 gRPC
+# listener on :{{ .Values.extAuthz.port }}.
+#
+# Why a separate Service from talon-talon (main :8443)?
+#   1. Wire format differs: extAuthz is HTTP/2 (h2c over Linkerd
+#      mTLS); main is HTTP/1.1 to Traefik. Linkerd needs explicit
+#      appProtocol per port — splitting Services avoids the
+#      protocol mismatch on the same listener.
+#   2. AuthzPolicy gate is different: only data planes (APISIX,
+#      Envoy mesh, future Istio waypoint) should reach extAuthz.
+#      Co-locating on the main Service would mix the policy graph
+#      (currently restricted to traefik-internal + Falcon-ID BCL).
+#   3. Operational visibility: dedicated ServiceMonitor + per-
+#      Service NetworkPolicy possible without polluting the main
+#      Service's selector graph.
+#
+# appProtocol kubernetes.io/h2c (alpha but widely supported) is the
+# SIG-Network recognised hint Linkerd reads to negotiate h2c over
+# the proxy. Without it the Linkerd proxy falls through to
+# protocol-detection — works, but uses an extra RTT on first
+# connect per pod identity.
+apiVersion: v1
+kind: Service
+metadata:
+  name: talon-extauthz
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: extauthz
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "talon.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: grpc-extauthz
+      port: {{ .Values.extAuthz.port }}
+      targetPort: extauthz
+      protocol: TCP
+      appProtocol: kubernetes.io/h2c
+{{- end }}

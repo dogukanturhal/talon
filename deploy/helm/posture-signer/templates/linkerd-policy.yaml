@@ -1,0 +1,79 @@
+{{- if .Values.linkerd.inbound.enabled }}
+{{- /*
+  Linkerd inbound policy for posture-signer :8080.
+
+  Architecture note (ADR 0040 D-003, memory internal engineering notes):
+  - proxyProtocol field is OMITTED (not set to HTTP/1). Setting it
+    explicitly breaks AuthorizationPolicy binding for meshed mTLS clients.
+    The auto-detect behaviour (default when the field is absent) correctly
+    sniffs HTTP/1 and allows the MTA to bind at the HTTP layer.
+  - The pattern: one Server CR + one (or more) AuthorizationPolicy +
+    MeshTLSAuthentication per allowed caller. The dual-codepath
+    ServerAuthorization is emitted alongside for edge-26.4.x binding-race
+    safety (memory internal engineering notes).
+*/}}
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: {{ include "posture-signer.fullname" . }}-http
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" . | nindent 4 }}
+spec:
+  port: http
+  podSelector:
+    matchLabels:
+      {{- include "posture-signer.selectorLabels" . | nindent 6 }}
+  # proxyProtocol: intentionally OMITTED — see note above.
+{{- range $i, $caller := .Values.linkerd.inbound.allowedCallers }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ printf "%s-%s-%s" (include "posture-signer.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" $ | nindent 4 }}
+spec:
+  identityRefs:
+    - kind: ServiceAccount
+      name: {{ $caller.name | quote }}
+      namespace: {{ $caller.namespace | quote }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ printf "%s-allow-%s-%s" (include "posture-signer.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" $ | nindent 4 }}
+  annotations:
+    linkerd.io/audit-mode: {{ eq $.Values.linkerd.inbound.mode "audit" | ternary "true" "false" | quote }}
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: {{ printf "%s-http" (include "posture-signer.fullname" $) }}
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: {{ printf "%s-%s-%s" (include "posture-signer.fullname" $) $caller.namespace $caller.name }}
+---
+{{- /* Dual-codepath ServerAuthorization per internal engineering notes */}}
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: {{ printf "%s-allow-%s-%s-sauth" (include "posture-signer.fullname" $) $caller.namespace $caller.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "posture-signer.labels" $ | nindent 4 }}
+spec:
+  server:
+    name: {{ printf "%s-http" (include "posture-signer.fullname" $) }}
+  client:
+    meshTLS:
+      serviceAccounts:
+        - name: {{ $caller.name | quote }}
+          namespace: {{ $caller.namespace | quote }}
+{{- end }}
+{{- end }}

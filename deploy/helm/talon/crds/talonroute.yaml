@@ -1,0 +1,551 @@
+---
+# CRD for TalonRoute v1alpha1 + v1beta1. Per ADR 0003 §3.
+#
+# Helm `crds/` directory installs once + does not reconcile updates.
+# A chart-aside Argo Application owns CRD reconciliation:
+# `clusters/prod-eu-west-1-hub/addons/talon-crds.yaml` in the
+# <gitops-bootstrap-repo> repo points at this directory and applies the
+# CRD with ServerSideApply=true at sync-wave -10 (before the
+# consumer `talon` Helm Application at wave 0). Schema additions in
+# a release flow through that path automatically; do NOT also
+# include CRDs in the consumer Application or Argo will surface
+# SharedResourceWarning on every reconcile.
+#
+# !!! CRITICAL — NO HELM TEMPLATING IN THIS FILE !!!
+# ===================================================
+# The talon-crds Argo Application reads this directory in `directory`
+# source mode (NOT Helm), which means Go template directives
+# (`{{ }}`, `{{- if }}` ... `{{- end }}`) are emitted to kube-apiserver
+# as literal characters and FAIL YAML parsing.
+#
+# That regressed silently between 2026-05-XX and 2026-06-01: a chart-
+# templated conversion stanza wedged the talon-crds App with
+# ComparisonError ("yaml: line 49: did not find expected node content")
+# and the live CRD froze at the pre-template state.
+#
+# The file is now intentionally static. Two design decisions follow
+# from this constraint:
+#
+#  1. Release namespace is hardcoded to `talon`. The chart contract
+#     pins the talon binary's release namespace to `talon`
+#     (clusters/prod-eu-west-1-hub/addons/talon-ns.yaml owns the ns);
+#     hardcoding here matches the operational reality. A new
+#     deployment cell using a different namespace must fork this CRD
+#     or templating must be reintroduced via a Helm-source Argo App
+#     (out of scope today).
+#
+#  2. spec.conversion is UNCONDITIONALLY `Webhook` regardless of the
+#     chart-side `conversionWebhook.enabled` flag. Apiserver only
+#     CALLS the webhook for cross-version conversion (a v1beta1 read
+#     when storage is v1alpha1, or vice versa). If the webhook
+#     Service is absent (chart flag off), v1beta1 reads return
+#     "no endpoints available" until the Service materialises —
+#     v1alpha1 reads continue unaffected (no conversion needed).
+#     cert-manager's `inject-ca-from` annotation injects the caBundle
+#     ONLY when the named Certificate exists; absent Certificate
+#     leaves caBundle empty, which is also the chart-off state.
+#
+# Authoring rules — when extending this CRD:
+#   - Bump v1alpha1 only (ADR 0003 forbids deletion at v1alpha1;
+#     rename ships as v1beta1 with a conversion webhook).
+#   - Keep additions backward-compatible; add fields with `omitempty`
+#     in the Go types so existing CRs decode under the new shape.
+#   - The talon-crds Application's selfHeal loop reconciles schema
+#     edits within minutes of the merge; no manual `kubectl apply`
+#     needed in normal release flow.
+#   - !! DO NOT add `{{ }}` Helm syntax to this file. !!
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: talonroutes.gateway.talon.hexxlock.com
+  labels:
+    app.kubernetes.io/name: talon
+    app.kubernetes.io/part-of: hexxlock-platform
+    app.kubernetes.io/component: identity-aware-proxy
+  annotations:
+    # Phase 6a.2 — cert-manager injects the CA bundle into the
+    # CRD's spec.conversion.webhook.clientConfig.caBundle at install
+    # time. Pinned to the talon-conversion-webhook Certificate in
+    # the `talon` namespace. When the Certificate doesn't exist
+    # (chart flag conversionWebhook.enabled=false), cert-manager
+    # leaves caBundle empty — webhook calls fail closed, but
+    # v1alpha1 reads work unaffected (no conversion required).
+    cert-manager.io/inject-ca-from: "talon/talon-conversion-webhook"
+spec:
+  group: gateway.talon.hexxlock.com
+  scope: Namespaced
+  # Phase 6a.2 — TalonRoute v1beta1 conversion. v1alpha1 stays as
+  # the storage version (no etcd migration); v1beta1 is served and
+  # round-tripped through the in-process Talon webhook
+  # (internal/conversion/webhook.go).
+  #
+  # The Webhook strategy is unconditional (see header comment).
+  # Apiserver only invokes the webhook for cross-version conversion
+  # calls; when the webhook Service is absent (chart off), only
+  # v1alpha1 → v1alpha1 paths work (no conversion needed). The
+  # controller's compilePathRules (talon!90) reads v1beta1 best-
+  # effort and degrades gracefully on fetch error.
+  conversion:
+    strategy: Webhook
+    webhook:
+      conversionReviewVersions: ["v1"]
+      clientConfig:
+        service:
+          namespace: talon
+          name: talon-conversion-webhook
+          path: /convert
+          port: 443
+        # caBundle injected by cert-manager.io/inject-ca-from
+        # annotation on the metadata above. Field MUST be present
+        # (empty string is legal) for kube-apiserver to accept the
+        # CRD spec; cert-manager mutates it once the Certificate's
+        # Secret materialises.
+        caBundle: ""
+  names:
+    kind: TalonRoute
+    listKind: TalonRouteList
+    plural: talonroutes
+    singular: talonroute
+    shortNames: [tr]
+    categories: [talon]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Host
+          type: string
+          jsonPath: .spec.host
+        - name: Upstream
+          type: string
+          jsonPath: .spec.upstream.service
+        - name: Permission
+          type: string
+          jsonPath: .spec.permission
+        - name: Registered
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Registered")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [host, upstream]
+              properties:
+                host:
+                  type: string
+                  description: Public host the IngressRoute matches on; must be a subdomain of internal.example.com (enforced by webhook in Phase 2.1).
+                  pattern: '^[a-z0-9-]+(\.[a-z0-9-]+)+$'
+                  maxLength: 253
+                upstream:
+                  type: object
+                  required: [service, port]
+                  properties:
+                    service:
+                      type: string
+                      description: Upstream k8s Service. Either `<name>` (resolves in this CR's namespace) or `<name>.<namespace>.svc(.cluster.local)?` fully qualified.
+                      pattern: '^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*(\.svc(\.cluster\.local)?)?)?$'
+                      maxLength: 253
+                    port:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 65535
+                    scheme:
+                      type: string
+                      description: 'Upstream URL scheme. Defaults to `http`. Use `https` for upstreams that terminate TLS at the application layer (e.g. SafeLine mgt nginx on :1443 which returns a JS-redirect on plain HTTP). HTTPS upstream cert verification is intentionally skipped — Linkerd mTLS is the in-cluster transport-security boundary, not the upstream''s self-signed leaf cert. Documented trust decision (see ADR 0007).'
+                      enum: [http, https]
+                permission:
+                  type: string
+                  description: SpiceDB permission name; subject must hold this against the talon_route resource (ADR 0001 §5.b). Defaults to viewer.
+                  enum: [viewer, editor, admin]
+                  default: viewer
+                allowedGroups:
+                  type: array
+                  description: Identity groups granted access; AND-combined with the SpiceDB permission check.
+                  items:
+                    type: string
+                    pattern: '^[a-zA-Z0-9_.@:-]+$'
+                    maxLength: 253
+                  maxItems: 32
+                allowedSubjects:
+                  type: array
+                  description: Falcon-ID `sub` UUIDs granted access; for break-glass per-user grants.
+                  items:
+                    type: string
+                    format: uuid
+                  maxItems: 32
+                sensitivity:
+                  type: string
+                  description: |
+                    ZTNA route-sensitivity class for the Phase 5 Rego baseline matrix
+                    (docs/policy/ztna/ztna_baseline.rego). Projected into
+                    RegoInputPosture.Compliance["route_sensitivity"] at request time.
+                    Empty defers to the Rego baseline's "medium" fallback. Per ADR 0040 Phase 5:
+                      "low"      — public-ish admin tools (Grafana dashboards, etc.)
+                      "medium"   — operator surfaces (default)
+                      "high"     — security-sensitive routes (Wazuh, Falco)
+                      "critical" — vault, kube-apiserver, ArgoCD admin
+                  enum: ["", "low", "medium", "high", "critical"]
+                allowClientless:
+                  type: boolean
+                  description: |
+                    ADR 0044 — opt this route into agentless/clientless browser access.
+                    A clientless session (request on a TALON_CLIENTLESS_HOST_SUFFIXES
+                    host) has no device cert and is projected into Rego as
+                    input.session.channel="clientless". Fail-closed default (false):
+                    Talon HARD-DENIES any clientless request to a sensitivity=critical
+                    route unless this is true. Non-critical routes serve clientless
+                    traffic subject to the Rego policy. Setting true lifts the
+                    critical-route hard deny so the Rego baseline alone governs.
+                  default: false
+                clientlessMaxTtl:
+                  type: integer
+                  description: |
+                    ADR 0044 — absolute session lifetime (seconds) Talon enforces for
+                    clientless-channel sessions on this route, capped below
+                    sessionTtlOverride (agentless sessions are time-boxed tighter as
+                    they carry no posture). 0 = cluster clientless default. Ignored for
+                    non-clientless sessions.
+                  minimum: 0
+                  maximum: 28800
+                  default: 0
+                sessionTtlOverride:
+                  type: integer
+                  description: |
+                    Per-route ABSOLUTE session lifetime in seconds — wall-clock cap, regardless of activity.
+                    Enforced at request time in the router. 0 = use cluster default. Capped at 28800 (8h)
+                    per ADR 0002 §3.1. Pomerium parity: per-route `timeout`. Cloudflare Zero Trust parity:
+                    application session duration.
+                  minimum: 0
+                  maximum: 28800
+                  default: 0
+                sessionIdleSeconds:
+                  type: integer
+                  description: |
+                    Per-route INACTIVITY timeout. Enforced at request time: when now - LastSeen exceeds
+                    this, the user is bounced to /auth/start. 0 = no idle limit. Must be <= sessionTtlOverride
+                    (or cluster TTL when zero) — reconciler rejects values that exceed the absolute cap.
+                    Pomerium parity: per-route `idle_timeout`.
+                  minimum: 0
+                  maximum: 28800
+                  default: 0
+                reauthOnNetworkChange:
+                  type: boolean
+                  description: |
+                    Force a fresh OIDC handshake when the request's source IP /24 differs from the CIDR
+                    bound on the session at issuance time. Defense-in-depth for admin-tier — catches
+                    stolen-cookie replay from a different network without breaking legitimate IP rotation
+                    within the same /24. Off by default; opt-in per route. Pomerium parity:
+                    `force_reauth_on_address_change`.
+                  default: false
+                requireDeviceClaims:
+                  type: array
+                  description: |
+                    AND-combined claims about the client device that must be present on the id_token to
+                    access this route. Allow-listed claim names only — unknown names cause Registered=False.
+                    Missing claim at request time FAILS CLOSED (deny + audit "device_claim_missing"). Schema
+                    landed before MDM onboarding so policies can be authored now and become live the day
+                    Falcon-ID starts emitting the claims. Microsoft Entra Conditional Access parity:
+                    device-compliance grant control. Cloudflare Zero Trust parity: device posture.
+                  maxItems: 8
+                  items:
+                    type: object
+                    required: [claim, equals]
+                    properties:
+                      claim:
+                        type: string
+                        description: |
+                          Allow-listed id_token claim name. Update the allow-list in coordination with
+                          the Falcon-ID claim-mapping rules.
+                        enum:
+                          - device_id
+                          - device_compliant
+                          - device_managed_by_mdm
+                          - device_tpm_attested
+                          - device_os_version
+                          - device_attestation_chain
+                      equals:
+                        type: string
+                        description: |
+                          Exact-string value to require. Booleans compared as "true"/"false". Empty string
+                          is rejected — express absence by omitting the requirement instead.
+                        minLength: 1
+                        maxLength: 256
+                publicPaths:
+                  description: >-
+                    Method+exact-path routes on this host that bypass the Talon
+                    session gate (enrollment-bootstrap carve-out). The upstream
+                    must self-authenticate. Empty = fully gated.
+                  type: array
+                  items:
+                    type: object
+                    required: [method, path]
+                    properties:
+                      method:
+                        type: string
+                      path:
+                        type: string
+                        pattern: '^/'
+                auditOnly:
+                  type: boolean
+                  description: |
+                    When true, the per-route enforcement checks added by the per-host session/device-claim
+                    batch (TTL expiry, idle expiry, IP rebind, device-claim missing/mismatch) emit
+                    "would_have_denied_<reason>" audit events but do NOT actually deny — the request still
+                    serves through. Existing checks (group/role, SpiceDB, Rego, MFA, sliding session, CV)
+                    are UNAFFECTED. Used for the one-week soak before flipping a route to enforce.
+                  default: false
+                continuousVerifyMinutes:
+                  type: integer
+                  description: Per-route continuous-verification cadence in minutes; 0 = use cluster default (15m, ADR 0001 §6).
+                  minimum: 0
+                  maximum: 1440
+                  default: 0
+                mfaRequired:
+                  type: boolean
+                  description: Phase 4 step-up MFA gate; require id_token amr=mfa to access. Defaults to false.
+                  default: false
+                policyRego:
+                  type: string
+                  description: |
+                    PolicyRego is an opt-in OPA Rego module that runs AFTER the role
+                    filter + SpiceDB CheckPermission both ALLOW. Rego can only NARROW
+                    access — never broaden — so the upper layer must already allow
+                    before the module evaluates. Tier-1 Gap 5 escape hatch.
+
+                    The module must declare `package talon.route` and expose
+                    `allow: bool`. Default semantics: `default allow := true` so an
+                    empty rule set is a no-op; rules add conditions that flip allow
+                    to false on tenant mismatch, time-of-day, source IP CIDR, AMR
+                    requirements, etc.
+
+                    Compile failures fail the route reconcile (Status condition
+                    Registered=False reason=ValidationFailed) so a malformed module
+                    doesn't ship to production.
+                injectAuthorizationBearer:
+                  type: boolean
+                  description: |
+                    Stamp the per-request X-Talon-Identity-Token JWT into the canonical
+                    Authorization: Bearer <jwt> header. Opt-in per route because
+                    Authorization is hop-by-hop semantic — blindly overwriting it
+                    can break apps that ship their own OAuth / API-key flow.
+                    Default false (Cloudflare Access posture: keep Authorization
+                    reserved by default).
+                  default: false
+                requireSignedIdentityToken:
+                  type: boolean
+                  description: |
+                    Fail CLOSED (deny 5xx) when the signed X-Talon-Identity-Token
+                    cannot be minted for this route, instead of the default fail-open
+                    unsigned-header fallback (ASVS 5.0 V9). Opt-in per route: enable it
+                    once the downstream service verifies the signed token, so an
+                    unmigrated service is never suddenly starved of the unsigned
+                    X-Talon-* headers it still relies on. OR'd with the fleet-wide
+                    TALON_REQUIRE_SIGNED_IDENTITY_TOKEN floor — a route can tighten but
+                    never fall below it. Default false preserves the Phase A/B posture.
+                  default: false
+                authMode:
+                  type: string
+                  description: |
+                    Per-route authentication-channel selector (talon-service-tokens). Mirrors the
+                    svctoken AuthMode enum + the static TALON_PROTECTED_HOSTS_JSON authMode field.
+                    Values:
+                      - "" or "cookie"          — browser-only (default; back-compat). Bearer
+                                                  headers ignored.
+                      - "bearer"                — machine-only. Missing/invalid Bearer → 401, no
+                                                  OIDC dance.
+                      - "both"                  — Bearer-first, cookie fallback for hosts that want
+                                                  IAP for browsers AND Bearer for machines on the
+                                                  same hostname.
+                      - "bearer_or_passthrough" — Bearer-first; when no Bearer header present,
+                                                  proxy DIRECTLY to upstream with original
+                                                  Authorization header intact (no OIDC dance).
+                                                  Enterprise BeyondCorp pattern for hosts where
+                                                  machine consumers use legacy native auth (Basic
+                                                  PAT etc) — lets us add Bearer additively without
+                                                  breaking those consumers.
+                      - "bearer_or_basic_with_credential_exchange"
+                                                — credential-exchange mode (Phase 4.5). Accepts
+                                                  the svctoken via Bearer OR via the password
+                                                  slot of Authorization: Basic base64(<anything>:
+                                                  <jwt>) (the wire shape ArgoCD's go-git produces
+                                                  from a repoCreds Secret). On successful verify,
+                                                  the router strips the inbound Authorization and
+                                                  substitutes a per-host upstream credential
+                                                  (PAT / robot account) sourced from a K8s Secret
+                                                  named `talon-upstream-creds-<host-with-dashes>`
+                                                  in the talon ns before forwarding. Closes the
+                                                  gap where the upstream cannot validate
+                                                  Falcon-ID-issued JWTs natively. Falls through
+                                                  to passthrough on absent Bearer + non-svctoken
+                                                  Basic password so legacy PAT callers keep
+                                                  working.
+                      - "bearer_or_federated_passthrough"
+                                                — federated-trust mode. Same as
+                                                  bearer_or_passthrough on no-header + primary-
+                                                  issuer paths; ALSO accepts Bearer JWTs signed by
+                                                  trusted SECONDARY issuers (svctoken.federatedIssuers
+                                                  in Helm values) with sig + exp verified, Bearer
+                                                  preserved on the outgoing request, upstream
+                                                  re-validates its own claim shape. Required for
+                                                  fronting Docker Registry v2 upstreams (Harbor)
+                                                  that issue their own Bearer JWTs via
+                                                  /service/token.
+                      - "cookie_or_bearer_or_passthrough"
+                                                — Path B unified mode (2026-06-09). Combines
+                                                  cookie/OIDC SSO + Bearer-or-Basic credential
+                                                  exchange + legacy Basic passthrough + federated
+                                                  Bearer trust on a single hostname:
+                                                    · no Authorization header  → cookie/OIDC path
+                                                    · valid svctoken Bearer    → claims attached
+                                                    · valid svctoken Basic-JWT → claims attached
+                                                    · legacy Basic non-JWT     → passthrough
+                                                    · valid federated Bearer   → passthrough
+                                                    · broken Bearer            → 401 (Envoy
+                                                                                  CVE-2021-21378
+                                                                                  invariant)
+                                                  Suitable for tier-1 unified GitLab. NOT for
+                                                  Docker Registry v2 surfaces (Harbor) — see
+                                                  bearer_or_federated_passthrough instead.
+                    Cluster-side svctoken feature flag (TALON_SVCTOKEN_ENABLED) must be true for
+                    any non-cookie mode to actually consult Bearer headers; otherwise the upstream
+                    is registered with authMode=cookie defensively. See
+                    docs/specs/talon-service-tokens.md.
+                  enum: [cookie, bearer, both, bearer_or_passthrough, bearer_or_basic_with_credential_exchange, bearer_or_federated_passthrough, cookie_or_bearer_or_passthrough]
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  format: int64
+                upstreamReachable:
+                  type: boolean
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status, lastTransitionTime, reason]
+                    properties:
+                      type:
+                        type: string
+                        maxLength: 316
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        maxLength: 1024
+                      message:
+                        type: string
+                        maxLength: 32768
+      subresources:
+        status: {}
+
+    # Phase 6a.2 — v1beta1 served via the conversion webhook. Storage
+    # stays v1alpha1 so existing CRs persist unchanged; v1beta1 reads
+    # and writes are round-tripped through the in-process Talon
+    # webhook (internal/conversion/webhook.go).
+    #
+    # SCHEMA POSTURE — Experimental
+    # =============================
+    # GEP-1494 (the parent industry standard this work aligns with)
+    # is Experimental in Gateway API v1.4.0. The pathRules shape is
+    # similarly Experimental — operators authoring v1beta1 CRs are
+    # opting into pre-Standard semantics. We deliberately ship a
+    # PERMISSIVE openAPIV3Schema (x-kubernetes-preserve-unknown-
+    # fields: true on the spec) so:
+    #
+    #   1. The conversion webhook owns field-level validation —
+    #      api/v1beta1/conversion.go normalises every v1beta1 read
+    #      to the in-process struct, and CompileRules (internal/
+    #      router/pathrules.go) enforces the per-rule invariants
+    #      (RE2, no %-encoded slashes, exactly-one match kind, etc).
+    #
+    #   2. The reconciler surfaces validation failures as
+    #      Registered=False reason=ValidationFailed so the operator
+    #      sees the error on `kubectl get talonroute` instead of at
+    #      admission.
+    #
+    #   3. A future MR tightens this schema to full structural
+    #      validation once the v1beta1 field shape stabilises (target:
+    #      Talon Phase 8 / Gateway API v1.5+ when GEP-1494 promotes
+    #      to Standard).
+    #
+    # PRINTER COLUMNS
+    # ===============
+    # v1beta1 surfaces the same Host / Upstream / Permission /
+    # Registered / Age columns; Permission is now read from
+    # .spec.defaultPolicy.permission (nested in v1beta1) rather than
+    # .spec.permission (flat in v1alpha1).
+    - name: v1beta1
+      served: true
+      storage: false
+      additionalPrinterColumns:
+        - name: Host
+          type: string
+          jsonPath: .spec.host
+        - name: Upstream
+          type: string
+          jsonPath: .spec.upstream.service
+        - name: Permission
+          type: string
+          jsonPath: .spec.defaultPolicy.permission
+        - name: PathRules
+          type: integer
+          # Number of pathRule entries — operators can spot at a
+          # glance which routes have per-path policy active.
+          jsonPath: .spec.pathRules[*]
+        - name: Registered
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Registered")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              required: [host, upstream]
+              properties:
+                host:
+                  type: string
+                  maxLength: 253
+                upstream:
+                  type: object
+                  required: [service, port]
+                  properties:
+                    service: {type: string, maxLength: 253}
+                    port: {type: integer, minimum: 1, maximum: 65535}
+                    scheme: {type: string, enum: [http, https]}
+                publicPaths:
+                  description: >-
+                    Method+exact-path routes on this host that bypass the Talon
+                    session gate (enrollment-bootstrap carve-out). The upstream
+                    must self-authenticate. Empty = fully gated.
+                  type: array
+                  items:
+                    type: object
+                    required: [method, path]
+                    properties:
+                      method:
+                        type: string
+                      path:
+                        type: string
+                        pattern: '^/'
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}

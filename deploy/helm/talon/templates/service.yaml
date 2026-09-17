@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "talon.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: https
+      port: {{ .Values.service.ports.https }}
+      targetPort: https
+      protocol: TCP
+      # appProtocol is the Linkerd-recognised protocol hint per the
+      # k8s SIG-Network conventions (https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol).
+      # Linkerd's policy controller reads this when no explicit Server CR
+      # selects the port — it lets the proxy do L7 instead of opaque-TCP
+      # right away. Setting it without an active Server CR is benign:
+      # Linkerd treats it as advisory and falls through to the default
+      # protocol-detection path. Audit 2026-04-27 found this missing.
+      appProtocol: https
+    {{- if .Values.service.ports.httpsAlias }}
+    - name: https-alias
+      # Default HTTPS port (443) alongside the canonical 8443. This lets
+      # in-cluster clients reach Talon JWKS over the SDK's default URL
+      # `https://internal.example.com/.well-known/jwks.json` without
+      # having to embed `:8443` in NEXT_PUBLIC_TALON_IAP_JWKS_URL. The
+      # CoreDNS rewrite plugin rewrites `internal.example.com` →
+      # `talon-talon.talon.svc.cluster.local` for in-cluster lookups
+      # (see <gitops-bootstrap-repo> addons/coredns-harbor-rewrite.yaml), and
+      # the pod's Node.js runtime trusts the internal CA chain via the
+      # `example-tenant-ca` trust-manager Bundle (see example-frontend
+      # ns label `hexxlock.com/internal-tls-trust=enabled`). Without
+      # port 443 the resolved Service has no matching port and the TLS
+      # handshake fails with ECONNRESET — diagnosed live 2026-05-13.
+      port: {{ .Values.service.ports.httpsAlias }}
+      targetPort: https
+      protocol: TCP
+      appProtocol: https
+    {{- end }}
+    - name: metrics
+      port: {{ .Values.service.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+      appProtocol: http
+  selector:
+    {{- include "talon.selectorLabels" . | nindent 4 }}

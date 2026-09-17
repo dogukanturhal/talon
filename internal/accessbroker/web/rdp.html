@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<!--
+  Talon clientless remote desktop (ADR 0044 Phase 3).
+
+  A dumb in-browser HTML5 <canvas> RDP client: it opens the broker
+  WebSocket (/access/rdp), renders the server->canvas graphics envelopes
+  the broker relays (mirroring internal/accessbroker/rdprelay.go's
+  encodeServerMsg binary layout), and sends pointer/keyboard/clipboard
+  events back as JSON envelopes (decodeRDPClientFrame). The browser
+  interprets NO RDP — jess (via the broker) owns the protocol, the
+  graphics decode, and the WORM recording.
+
+  HONEST SCAFFOLD STATE (Phase 3): the broker's jess RDP backend is
+  STUBBED. With the dev-synthetic backend enabled the canvas paints a
+  heartbeat overlay (text tiles) — enough to prove the relay, the
+  clipboard policy seam, and the input path end to end. Real desktop
+  bitmaps land when jess's RDP broker is wired (the canvas render switch
+  on RDPMsgFrame/RDPMsgTile decodes the encoded image jess sends; no
+  client change beyond drawImage of the decoded blob).
+
+  Clipboard + file transfer are gated at the relay by policy: a paste the
+  policy forbids is silently dropped server-side (the user sees no error,
+  exactly as a DLP control should behave), and the broker increments
+  talon_access_broker_policy_drops_total.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HexxLock Access — Remote Desktop</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e14; color: #c9d1d9; font-family: ui-monospace, monospace; }
+    #status { padding: 6px 10px; font-size: 13px; background: #161b22; border-bottom: 1px solid #21262d; }
+    #status.ok { color: #3fb950; }
+    #status.err { color: #f85149; }
+    #wrap { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; overflow: auto; background: #000; }
+    #screen { display: block; image-rendering: pixelated; outline: none; cursor: crosshair; }
+  </style>
+</head>
+<body>
+  <div id="status">connecting…</div>
+  <div id="wrap">
+    <canvas id="screen" tabindex="0" width="1280" height="720"></canvas>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      // --- wire constants (must match internal/accessbroker/rdpbackend.go) ---
+      const KIND = {
+        TILE: 1, FRAME: 2, CURSOR: 3, SERVER_CLIPBOARD: 4,
+        POINTER: 10, KEY: 11, CLIENT_CLIPBOARD: 12, FILE: 13,
+      };
+      const HEADER_LEN = 10; // rdpHeaderLen
+
+      const statusEl = document.getElementById('status');
+      const canvas = document.getElementById('screen');
+      const ctx = canvas.getContext('2d');
+      function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ''; }
+
+      const pageParams = new URLSearchParams(window.location.search);
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsParams = new URLSearchParams();
+      if (pageParams.get('target')) wsParams.set('target', pageParams.get('target'));
+      if (pageParams.get('user')) wsParams.set('user', pageParams.get('user'));
+      wsParams.set('w', String(canvas.width));
+      wsParams.set('h', String(canvas.height));
+      const wsURL = proto + '//' + window.location.host + '/access/rdp?' + wsParams.toString();
+
+      const ws = new WebSocket(wsURL);
+      ws.binaryType = 'arraybuffer';
+
+      const enc = new TextEncoder();
+      const dec = new TextDecoder();
+
+      function b64(bytes) {
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+      }
+
+      // sendJSON delivers a client input event (the JSON envelope the relay
+      // accepts on TEXT frames; see decodeRDPJSON).
+      function sendJSON(obj) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+      }
+
+      // --- server->canvas render -------------------------------------------
+      // The scaffold synthetic backend sends UTF-8 text in Data (a heartbeat
+      // overlay). The production jess backend will send encoded image bytes;
+      // swap the renderTextOverlay calls for createImageBitmap(blob) +
+      // ctx.drawImage(bitmap, x, y) — no other change.
+      let frameLine = 0;
+      function renderServerMsg(view) {
+        const kind = view.getUint8(0);
+        const x = view.getUint16(1);
+        const y = view.getUint16(3);
+        const w = view.getUint16(5);
+        const h = view.getUint16(7);
+        const data = new Uint8Array(view.buffer, view.byteOffset + HEADER_LEN, view.byteLength - HEADER_LEN);
+        switch (kind) {
+          case KIND.FRAME:
+            if (w && h) { canvas.width = w; canvas.height = h; }
+            ctx.fillStyle = '#10131a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#3fb950';
+            ctx.font = '14px ui-monospace, monospace';
+            ctx.fillText('[ ' + dec.decode(data) + ' ]', 12, 24);
+            frameLine = 0;
+            break;
+          case KIND.TILE:
+            // Scaffold: scroll a heartbeat line. Production: drawImage(blob,x,y).
+            frameLine = (frameLine + 1) % Math.max(1, Math.floor((canvas.height - 48) / 18));
+            ctx.fillStyle = '#0b0e14';
+            ctx.fillRect(12, 44 + frameLine * 18, canvas.width - 24, 18);
+            ctx.fillStyle = '#c9d1d9';
+            ctx.font = '13px ui-monospace, monospace';
+            ctx.fillText(dec.decode(data), 12, 58 + frameLine * 18);
+            break;
+          case KIND.CURSOR:
+            // Production: set a custom cursor image. Scaffold: no-op.
+            break;
+          case KIND.SERVER_CLIPBOARD:
+            // The relay only forwards this if policy allows clipboard->client.
+            try {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(dec.decode(data)).catch(function () {});
+              }
+            } catch (e) { /* clipboard API may be blocked; ignore */ }
+            setStatus('remote clipboard received (' + data.length + ' bytes)', 'ok');
+            break;
+          default:
+            break;
+        }
+      }
+
+      ws.onmessage = function (ev) {
+        if (ev.data instanceof ArrayBuffer) {
+          if (ev.data.byteLength < HEADER_LEN) return;
+          renderServerMsg(new DataView(ev.data));
+        }
+      };
+
+      // --- canvas->server input --------------------------------------------
+      function canvasCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(canvas.width - 1, Math.round(e.clientX - rect.left))),
+          y: Math.max(0, Math.min(canvas.height - 1, Math.round(e.clientY - rect.top))),
+        };
+      }
+
+      ws.onopen = function () {
+        setStatus('connected — ' + (pageParams.get('target') || 'desktop') + ' (clipboard/file per policy)', 'ok');
+        canvas.focus();
+
+        canvas.addEventListener('mousemove', function (e) {
+          const c = canvasCoords(e);
+          sendJSON({ type: 'pointer', x: c.x, y: c.y, button: e.buttons });
+        });
+        canvas.addEventListener('mousedown', function (e) {
+          const c = canvasCoords(e);
+          sendJSON({ type: 'pointer', x: c.x, y: c.y, button: (1 << e.button), down: true });
+          canvas.focus();
+        });
+        canvas.addEventListener('mouseup', function (e) {
+          const c = canvasCoords(e);
+          sendJSON({ type: 'pointer', x: c.x, y: c.y, button: (1 << e.button), down: false });
+        });
+        canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+        canvas.addEventListener('wheel', function (e) {
+          e.preventDefault();
+          const c = canvasCoords(e);
+          sendJSON({ type: 'pointer', x: c.x, y: c.y, button: e.deltaY < 0 ? 0x100 : 0x200 });
+        }, { passive: false });
+
+        canvas.addEventListener('keydown', function (e) {
+          e.preventDefault();
+          sendJSON({ type: 'key', keyCode: e.keyCode, down: true });
+        });
+        canvas.addEventListener('keyup', function (e) {
+          e.preventDefault();
+          sendJSON({ type: 'key', keyCode: e.keyCode, down: false });
+        });
+
+        // Paste -> client->server clipboard (gated by relay policy). If the
+        // policy forbids it the broker silently drops it (DLP behaviour).
+        canvas.addEventListener('paste', function (e) {
+          const text = (e.clipboardData || window.clipboardData).getData('text');
+          if (text) sendJSON({ type: 'clipboard', data: b64(enc.encode(text)) });
+        });
+      };
+
+      ws.onclose = function (ev) {
+        setStatus('disconnected' + (ev.reason ? ' — ' + ev.reason : '') + ' (code ' + ev.code + ')', 'err');
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#f85149';
+        ctx.font = '16px ui-monospace, monospace';
+        ctx.fillText('[ session closed ]', 12, canvas.height / 2);
+      };
+
+      ws.onerror = function () { setStatus('connection error', 'err'); };
+    })();
+  </script>
+</body>
+</html>

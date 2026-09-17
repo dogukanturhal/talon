@@ -1,0 +1,82 @@
+# Tier-1 lint config — mirrors falcon-id intent without the falcon-id-
+# specific exclusions. Tighten incrementally; never relax to silence one
+# noisy diagnostic.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocritic
+    - revive
+    - misspell
+    - bodyclose
+    - errorlint
+    - gosec
+    - prealloc
+    - unconvert
+  settings:
+    gosec:
+      excludes:
+        - G404 # math/rand acceptable for non-cryptographic uses (none yet, defensive)
+    revive:
+      rules:
+        - name: var-naming
+        - name: error-return
+        - name: error-strings
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: var-declaration
+  # Test files use Go-test-controlled paths + small synthetic HTTP
+  # handlers + hardcoded localhost URLs. Production-rule gosec checks
+  # (G304 file-inclusion via variable, G120 ParseForm without size
+  # cap, G101 string-literal credential heuristic) flag those test
+  # patterns but they are not real risks in test-scope code. errcheck
+  # + errorlint are intentionally relaxed in tests where the test
+  # closure already asserts on the err it cares about.
+  #
+  # golangci-lint v2 schema: exclusions live under `linters.exclusions`.
+  # See https://golangci-lint.run/usage/configuration/#exclusions-configuration
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - errorlint
+
+      # talonctl is the one CLIENT in this repo. Everything else is a
+      # server that never launches a process and never touches a path the
+      # operator typed, so G204/G304 have always been free wins here —
+      # they are not, for a tool whose entire job is to open the user's
+      # browser and manage the user's ~/.npmrc.
+      #
+      # Scoped to those two rules in that one package rather than
+      # disabling gosec: G101/G117 (credential heuristics) and the rest
+      # stay ON for this code, which is where they matter most — it is
+      # the only package that handles a bearer token at rest.
+      #
+      # The underlying risks are handled in code, not waved away:
+      #   G204 — the command name is a per-OS LITERAL in each branch, the
+      #          URL is validated to http/https-with-a-host before it is
+      #          passed (see validateBrowserURL), and it is passed as an
+      #          argv element, never through a shell.
+      #   G304 — paths are filepath.Clean'ed before use, and are either
+      #          the tool's own config dir or a file the operator named
+      #          explicitly with --npmrc.
+      - path: (internal/clilogin/|cmd/talonctl/)
+        linters:
+          - gosec
+        text: "(G204|G304)"
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+run:
+  timeout: 10m
+  go: "1.26"
