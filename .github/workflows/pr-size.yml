@@ -1,0 +1,57 @@
+name: PR size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  size:
+    name: pr-size
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check pull request size
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          MAX_LINES: "400"
+          MAX_FILES: "15"
+          WARN_LINES: "200"
+        run: |
+          set -euo pipefail
+          # Maintainer, sync bot and Dependabot are exempt; so is a PR a maintainer labelled size-exempt
+          # (labels need write access, so contributors cannot set it).
+          case "$AUTHOR" in
+            dogukanturhal|dependabot\[bot\]|hexxlock-sync\[bot\]) echo "Exempt author: $AUTHOR"; exit 0;;
+          esac
+          if echo "$LABELS" | grep -q '"size-exempt"'; then echo "Exempt by maintainer label"; exit 0; fi
+
+          # Count from the API (no checkout: contributor code is never fetched or run here).
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | [.filename, (.additions + .deletions)] | @tsv' > files.tsv
+          ignore='(^|/)(go\.sum|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$|\.pb\.go$|_gen\.go$|(^|/)vendor/'
+          lines=$(grep -Ev "$ignore" files.tsv | awk -F'\t' '{s+=$2} END{print s+0}')
+          files=$(grep -Ev "$ignore" files.tsv | wc -l | tr -d ' ')
+          {
+            echo "### Pull request size"
+            echo "Changed lines (counted): **$lines** / $MAX_LINES"
+            echo "Files (counted): **$files** / $MAX_FILES"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$lines" -gt "$MAX_LINES" ] || [ "$files" -gt "$MAX_FILES" ]; then
+            echo "::error::This pull request changes $lines lines in $files files (limit $MAX_LINES lines / $MAX_FILES files). Please split it into smaller pull requests; see CONTRIBUTING.md, 'Keep pull requests small'."
+            exit 1
+          fi
+          if [ "$lines" -gt "$WARN_LINES" ]; then
+            echo "::warning::$lines changed lines. Under $WARN_LINES is easier to review; consider splitting."
+          fi
+          echo "Size OK"
