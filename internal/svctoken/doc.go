@@ -12,9 +12,9 @@
 // shared abstraction:
 //
 //  1. Issuer — svctoken expects Falcon-ID's JWKS
-//     (https://id.hexxlock.com/.well-known/jwks.json), identityjwt
+//     (https://id.example.com/.well-known/jwks.json), identityjwt
 //     expects Talon's own
-//     (https://internal.example.com/.well-known/jwks.json).
+//     (https://auth.internal.example.com/.well-known/jwks.json).
 //  2. Audience — svctoken accepts a per-request audience computed
 //     from the HTTP Host header (RFC 8707 resource→aud binding),
 //     identityjwt pins one audience at construction.

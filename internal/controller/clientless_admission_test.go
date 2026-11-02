@@ -38,21 +38,21 @@ func TestValidateRoute_ClientlessHostZone(t *testing.T) {
 	})
 
 	t.Run("access host admitted when clientless zone configured", func(t *testing.T) {
-		protectedHostSuffixes = []string{"internal.example.com"}
-		clientlessHostSuffixes = []string{".access.hexxlock.com"}
-		if err := validateRoute(base("argocd.access.hexxlock.com")); err != nil {
+		protectedHostSuffixes = []string{".internal.example.com"}
+		clientlessHostSuffixes = []string{".access.example.com"}
+		if err := validateRoute(base("argocd.access.example.com")); err != nil {
 			t.Fatalf("access-zone host must be admitted, got %v", err)
 		}
 		// Admin zone still works alongside the access zone.
-		if err := validateRoute(base("internal.example.com")); err != nil {
+		if err := validateRoute(base("prometheus.internal.example.com")); err != nil {
 			t.Fatalf("admin-zone host must still be admitted, got %v", err)
 		}
 	})
 
 	t.Run("access host rejected when clientless zone disabled", func(t *testing.T) {
-		protectedHostSuffixes = []string{"internal.example.com"}
+		protectedHostSuffixes = []string{".internal.example.com"}
 		clientlessHostSuffixes = nil
-		err := validateRoute(base("argocd.access.hexxlock.com"))
+		err := validateRoute(base("argocd.access.example.com"))
 		if err == nil {
 			t.Fatal("access-zone host must be rejected when clientless tier disabled")
 		}
@@ -62,11 +62,11 @@ func TestValidateRoute_ClientlessHostZone(t *testing.T) {
 	})
 
 	t.Run("suffix-collision attack rejected", func(t *testing.T) {
-		// A leading-dot suffix (".access.hexxlock.com") must NOT match a host
+		// A leading-dot suffix (".access.example.com") must NOT match a host
 		// that merely ends with the same letters at a non-dotted boundary.
 		protectedHostSuffixes = nil
-		clientlessHostSuffixes = []string{".access.hexxlock.com"}
-		if err := validateRoute(base("evilaccess.hexxlock.com")); err == nil {
+		clientlessHostSuffixes = []string{".access.example.com"}
+		if err := validateRoute(base("evilaccess.example.com")); err == nil {
 			t.Fatal("non-dotted-boundary host must be rejected (suffix-collision guard)")
 		}
 	})

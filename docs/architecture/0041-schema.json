@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://talon.hexxlock.com/schemas/0041-audit-record.json",
+  "$id": "https://talon.example.com/schemas/0041-audit-record.json",
   "title": "talon.audit.v1 — Audit Record",
   "description": "ADR 0041 §6 — canonical NDJSON audit record shape emitted by Talon at every request/response cycle. Consumed by audit-replay --validate-schema (Phase 8.c.3), compliance-evidence framework controls (Phase 8.d), and the WORM archive replay tooling. Forward-compatible per the 7-year retention contract: every field is optional EXCEPT `ts` so an older binary's recorded events stay parseable. Strict-mode validation surfaces field-type drift early.",
   "type": "object",
@@ -48,7 +48,7 @@
       "maxLength": 256
     },
     "route": {
-      "description": "TalonRoute host that handled the request (e.g. internal.example.com).",
+      "description": "TalonRoute host that handled the request (e.g. argocd.internal.example.com).",
       "type": "string",
       "maxLength": 253
     },
@@ -88,7 +88,7 @@
       "maxLength": 256
     },
     "iss": {
-      "description": "Identity-token issuer URL (typically https://id.hexxlock.com).",
+      "description": "Identity-token issuer URL (typically https://id.example.com).",
       "type": "string",
       "maxLength": 256
     },

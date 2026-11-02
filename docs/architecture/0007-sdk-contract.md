@@ -2,7 +2,7 @@
 
 - **Status:** Stub (filling during Gap 8 — week 1, day-1 fix)
 - **Date:** 2026-04-27 (stub)
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Refines:** ADR 0001 §6 (RP-Initiated Logout chain — landed `c1fcb8f`)
 - **Related:** `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md` Gap 8;
   ADR 0006 §3.4 (Falcon-ID logout chain), ADR 0006 §3.5 (idp_session
@@ -14,13 +14,13 @@
 
 Stub. Day-1 fix in week 1: SDK MR in `frontend` repo against
 `packages/falcon-id-client`. v1.x adds `skipSelfHop?: boolean` opt-in.
-v2.x flips default true. 2-week soak on `accounts.hexxlock.com` between.
+v2.x flips default true. 2-week soak on `accounts.example.com` between.
 
 ## 2. Context
 
 The 17 admin hosts behind Talon do not use the falcon-id-client SDK —
 they are direct OIDC RPs via Talon. The SDK matters for the
-**customer-tier** apps (`accounts.hexxlock.com`, ExampleSuite, etc.) where
+**customer-tier** apps (`accounts.example.com`, ExampleSuite, etc.) where
 React-rendered SPAs need a session client. Those apps' SLO chain
 crosses Talon's boundary only via Gap 7's forward-auth path; the SDK
 owns the cookie chain end-to-end up to and including
@@ -64,7 +64,7 @@ token via SSO.
      design (memory: internal engineering notes).
 2. **v2.x flips default to true.** v1.x stays in npm for a 2-week
    soak window after first opt-in adoption.
-3. **Pilot rollout**: `accounts.hexxlock.com` opts in v1.x with
+3. **Pilot rollout**: `accounts.example.com` opts in v1.x with
    `skipSelfHop: true`. Soak 2 weeks (Playwright e2e
    `cross-app-logout.spec.ts` runs nightly).
 4. **`accountsLogoutUrl` config option deprecated** when SDK reads
@@ -76,10 +76,10 @@ token via SSO.
    cookie chain for SDK-fronted apps; Talon shadow-clears its own
    cookie via the next-request 401 (no session in Redis →
    redirect to Falcon-ID login).
-7. **e2e test**: `e2e/playwright/tests/cross-app-logout.spec.ts` —
+7. **e2e test**: an unpublished e2e test —
    login to accounts → click "Sign out" → verify
    `falcon_idp_session` cookie absent → re-visit
-   `internal.example.com` → assert Falcon-ID login prompt
+   `grafana.internal.example.com` → assert Falcon-ID login prompt
    (NOT silent SSO).
 
 ## 4. Implementation
@@ -88,7 +88,7 @@ token via SSO.
 >
 > - Frontend MR: `frontend/packages/falcon-id-client/src/nextjs/provider.tsx`
 >   reorder + `skipSelfHop` flag.
-> - BFF MR (consumer apps): `app.config.ts` opt-in in `accounts.hexxlock.com`
+> - BFF MR (consumer apps): `app.config.ts` opt-in in `accounts.example.com`
 >   first.
 > - Talon docs MR: `docs/integration/sdk-clients.md` (this repo) —
 >   guidance for SDK-fronted apps fronted by Talon.

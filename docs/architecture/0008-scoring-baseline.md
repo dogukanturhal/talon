@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (locked 2026-04-27 at start of Tier-1 gap-closure session)
 - **Date:** 2026-04-27
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Related:** ADRs 0001 §3, 0001 §6, 0002, 0003; `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md`
 - **Refines:** N/A (snapshot ADR — calibrates the 17-dimension matrix used by the gap-closure plan)
 
@@ -69,16 +69,16 @@ Prompt baseline: 4. Re-score: 5.
 What landed since calibration:
 - ADRs 0001 (architecture+threat model), 0002 (cookie/session), 0003 (CRD)
   are full-depth Tier-1 documents (40-200 sections each).
-- Operations runbooks: `migrate-host.md` (Phase 3 host migration),
+- Operations runbooks:
   `per-app-oidc-integration.md`, `vault-oidc-setup.md` (Phase 4.x).
-- e2e/playwright suite covers all 17 admin hosts with per-host screenshot +
-  state-trace artefacts; e2e/ios/README is the iOS verification rig.
+- A browser e2e suite (not published) covers the admin hosts with per-host screenshot +
+  state-trace artefacts; an iOS verification rig is kept internally.
 
 Still missing for Tier-1:
 - ADRs 0004 (continuous-verification cadence), 0005 (forward-auth),
   0006 (Falcon-ID integration quirks), 0007 (SDK contract). 0008 (this).
-- Operations: `incident-response.md`, `observability.md`, `break-glass.md`.
-- `onboarding/new-engineer.md`, `integration/sdk-clients.md`,
+- Operations: `observability.md`.
+- `integration/sdk-clients.md`,
   `compliance/control-mapping.md`.
 
 Delta to Tier-1: +3 (5 → 8). Gap 1 owns this work.
@@ -199,7 +199,7 @@ in §3 with quantitative evidence:
 | 13 — Audit | Gap 4 | `talon evidence export --controls=CC6.6 --since=… --until=…` produces auditor-ready CSV; cosign verifies manifest; SOC analyst reconstructs sso_chain via `sso_chain_id` grep. |
 | 14 — Policy | Gap 5 | Cedar-equivalence CI gate green on all routes; per-route `policyRego` example (time-of-day + IP CIDR) running in production with `talon test policy` cases passing. |
 | 15 — Perf | Gap 6 | k6 ramp 0→1000 RPS; sustained 1000 RPS for 10 min; p99 ≤ 50 ms across allow+deny mix; 0 5xx at 500 RPS sustained; HPA scales 2→6→2 cleanly. |
-| 16 — Forward-auth | Gap 7 | Customer-tier route `accounts.hexxlock.com/admin` gated by APISIX → Talon `/auth/verify`; identity headers present on 200; 503+Retry-After on Talon outage; cookie scope isolation verified between admin/customer tiers. |
+| 16 — Forward-auth | Gap 7 | Customer-tier route `accounts.example.com/admin` gated by APISIX → Talon `/auth/verify`; identity headers present on 200; 503+Retry-After on Talon outage; cookie scope isolation verified between admin/customer tiers. |
 | 17 — SDK SLO | Gap 8 | E2E `cross-app-logout.spec.ts`: logout from accounts → `falcon_idp_session` gone → re-visit any admin host → re-login required. Soak 2 weeks on accounts before flipping default in v2.x. |
 
 ## 7. References

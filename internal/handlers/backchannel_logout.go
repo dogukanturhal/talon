@@ -7,10 +7,10 @@
 // Falcon-ID's BackchannelLogoutService.NotifyLogout (in falcon-id) POSTs
 // a signed `logout_token` to this endpoint whenever a user signs out at
 // any registered RP. Without this receiver, Talon's session at
-// internal.example.com would stay alive for up to 8h (SessionHardTTL)
-// after Sign Out at accounts.hexxlock.com — the gap that closed in this
+// auth.internal.example.com would stay alive for up to 8h (SessionHardTTL)
+// after Sign Out at accounts.example.com — the gap that closed in this
 // MR (gap SLO-01 of
-// <gitops-bootstrap-repo>/docs/audits/2026-Q2-tier1-iam-iap-audit.md).
+// the internal Q2 2026 IAM/IAP audit).
 //
 // AUTHENTICATION
 //

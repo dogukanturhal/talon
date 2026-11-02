@@ -23,7 +23,7 @@ import (
 func TestComputeAcceptKey(t *testing.T) {
 	// RFC 6455 §1.3 worked example: key "dGhlIHNhbXBsZSBub25jZQ==" ->
 	// accept "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=".
-	const key = "dGhlIHNhbXBsZSBub25jZQ==" // gitleaks:allow — test fixture, not a real credential
+	const key = "dGhlIHNhbXBsZSBub25jZQ=="
 	const want = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 	if got := computeAcceptKey(key); got != want {
 		t.Fatalf("computeAcceptKey(%q) = %q, want %q", key, got, want)
@@ -307,7 +307,7 @@ func TestAcceptWebSocket_Handshake(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	const key = "dGhlIHNhbXBsZSBub25jZQ==" // gitleaks:allow — test fixture, not a real credential
+	const key = "dGhlIHNhbXBsZSBub25jZQ=="
 	req := "GET /access/ssh HTTP/1.1\r\n" +
 		"Host: broker\r\n" +
 		"Upgrade: websocket\r\n" +

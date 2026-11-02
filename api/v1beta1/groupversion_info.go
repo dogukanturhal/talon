@@ -14,7 +14,7 @@
 // project deliberately avoids the kubebuilder/controller-tools build
 // dep — types are small and the round-trip is straightforward).
 //
-// +groupName=gateway.talon.hexxlock.com
+// +groupName=gateway.talon.example.com
 package v1beta1
 
 import (
@@ -23,7 +23,7 @@ import (
 )
 
 // GroupVersion is group version used to register these objects.
-var GroupVersion = schema.GroupVersion{Group: "gateway.talon.hexxlock.com", Version: "v1beta1"}
+var GroupVersion = schema.GroupVersion{Group: "gateway.talon.example.com", Version: "v1beta1"}
 
 // SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 var SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

@@ -24,7 +24,7 @@ func sessRec(seq int64, ts string, event, decision string, prevHash, hash string
 		Sub:       "01H_USER",
 		Email:     "alice@example.com",
 		TenantID:  "tenant-foo",
-		Route:     "internal.example.com",
+		Route:     "argocd.internal.example.com",
 		Method:    "GET",
 		Path:      "/api/v1/projects",
 		SrcIP:     "10.0.50.5",
@@ -141,7 +141,7 @@ func TestRenderHTML_EmitsSelfContainedPage(t *testing.T) {
 	if !strings.Contains(html, "sess-1") {
 		t.Fatalf("rendered HTML should embed the session id")
 	}
-	if !strings.Contains(html, "internal.example.com") {
+	if !strings.Contains(html, "argocd.internal.example.com") {
 		t.Fatalf("rendered HTML should embed the route field")
 	}
 	if !strings.Contains(html, "01H_USER") {

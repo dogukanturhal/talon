@@ -9,7 +9,7 @@
 // canonical CRD-versioning rule — fields absent from a target schema
 // can't be preserved). Operators authoring v1beta1 features MUST
 // expect the down-convert to lose pathRules; the runbook flag is
-// documented in docs/operations/migrate-host.md when the migration
+// documented in the operations docs when the migration
 // lands.
 //
 // Hand-written (no kubebuilder/conversion-gen) per the project's

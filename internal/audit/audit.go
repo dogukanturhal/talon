@@ -14,7 +14,7 @@
 //	  "event": "request.allow" | "request.deny" | ...,
 //	  "sub": "<falcon-id sub>",
 //	  "email": "alice@example.com",
-//	  "route": "internal.example.com",
+//	  "route": "prometheus.internal.example.com",
 //	  "method": "GET",
 //	  "path": "/graph",
 //	  "decision": "allow",
@@ -24,7 +24,7 @@
 //	  "session_id": "<uuid>",
 //	  "permission": "viewer",
 //	  "mfa": false,
-//	  "iss": "https://id.hexxlock.com",
+//	  "iss": "https://id.example.com",
 //	  "talon_version": "<commit>"
 //	}
 //

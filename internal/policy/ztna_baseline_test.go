@@ -56,7 +56,7 @@ func TestZTNABaseline_Matrix(t *testing.T) {
 					AMR:                []string{"pwd", "hwk"},
 					AMRRecencySeconds:  1800,
 				},
-				Route: RegoInputRoute{Host: "internal.example.com", Permission: "viewer"},
+				Route: RegoInputRoute{Host: "grafana.internal.example.com", Permission: "viewer"},
 				Request: RegoInputRequest{Method: "GET", Path: "/x"},
 				Posture: &RegoInputPosture{
 					IssuedAt: now - 60,
@@ -78,7 +78,7 @@ func TestZTNABaseline_Matrix(t *testing.T) {
 					AMR:                []string{"pwd"},
 					AMRRecencySeconds:  1800,
 				},
-				Route: RegoInputRoute{Host: "internal.example.com", Permission: "viewer"},
+				Route: RegoInputRoute{Host: "grafana.internal.example.com", Permission: "viewer"},
 				Request: RegoInputRequest{Method: "GET", Path: "/x"},
 				Posture: &RegoInputPosture{
 					IssuedAt: now - 60,

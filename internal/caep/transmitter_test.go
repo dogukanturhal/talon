@@ -32,10 +32,10 @@ func (f *fakeSigner) SignSET(_ context.Context, c SETClaims) (string, error) {
 func newTestTx(t *testing.T, s Signer) *Transmitter {
 	t.Helper()
 	tx, err := NewTransmitter(TransmitterConfig{
-		SetIssuer:     "https://posture.hexxlock.com",
-		SubjectIssuer: "https://id.hexxlock.com",
-		Audience:      "https://internal.example.com",
-		ReceiverURL:   "https://internal.example.com/caep/events",
+		SetIssuer:     "https://posture.example.com",
+		SubjectIssuer: "https://id.example.com",
+		Audience:      "https://auth.internal.example.com",
+		ReceiverURL:   "https://auth.internal.example.com/caep/events",
 	}, s)
 	if err != nil {
 		t.Fatal(err)
@@ -50,10 +50,10 @@ func TestBuildSessionRevoked(t *testing.T) {
 	tx := newTestTx(t, &fakeSigner{})
 	set := tx.BuildSessionRevoked("user-123", "device de-provisioned")
 
-	if set.Iss != "https://posture.hexxlock.com" {
+	if set.Iss != "https://posture.example.com" {
 		t.Errorf("iss=%q", set.Iss)
 	}
-	if !set.Aud.contains("https://internal.example.com") {
+	if !set.Aud.contains("https://auth.internal.example.com") {
 		t.Errorf("aud=%v", set.Aud)
 	}
 	if set.JTI != "jti-fixed-1" || set.IAT != 1_717_000_000 {
@@ -63,7 +63,7 @@ func TestBuildSessionRevoked(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing session-revoked event; events=%v", set.Events)
 	}
-	if ev.Subject.Format != "iss_sub" || ev.Subject.Iss != "https://id.hexxlock.com" || ev.Subject.Sub != "user-123" {
+	if ev.Subject.Format != "iss_sub" || ev.Subject.Iss != "https://id.example.com" || ev.Subject.Sub != "user-123" {
 		t.Errorf("subject=%+v (want iss_sub / Falcon-ID iss / user-123)", ev.Subject)
 	}
 	if ev.EventTimestamp != 1_717_000_000 {
@@ -119,7 +119,7 @@ func TestSET_WireRoundTrip(t *testing.T) {
 		t.Errorf("event drift: %+v", back.Events)
 	}
 	// aud serializes as a single string (RFC 7519), still parses back.
-	if !back.Aud.contains("https://internal.example.com") {
+	if !back.Aud.contains("https://auth.internal.example.com") {
 		t.Errorf("aud round-trip lost: %v", back.Aud)
 	}
 }

@@ -1,7 +1,7 @@
 apiVersion: v2
 name: posture-signer
 description: >-
-  ZTNA Phase 4 posture-signer — RS256 JWS issuer for HexxLock Access device-posture
+  ZTNA Phase 4 posture-signer — RS256 JWS issuer for Access Agent device-posture
   heartbeats. Backed by Vault Transit (key never on disk). Two replicas for HA.
   Inbound auth: Linkerd mTLS (pod identity) + jess-device-ca client cert (device identity).
   Metrics on :9090/metrics. JWKS at /.well-known/jwks.json consumed by Talon verifier.
@@ -10,7 +10,7 @@ version: 0.1.0
 appVersion: "0.0.0"
 maintainers:
   - name: HexxLock Platform Team
-    email: platform@hexxlock.com
+    email: dogukanturhal@hexxlock.com
 keywords:
   - ztna
   - posture

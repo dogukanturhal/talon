@@ -245,7 +245,7 @@ func (m AuthMode) IsValid() bool {
 // Falcon-ID token, authorise the request, and forward it WITHOUT
 // substituting the upstream credential — so an upstream that cannot
 // validate Falcon-ID JWTs saw an unauthenticated request and refused
-// it. Caught 2026-08-14 on internal.example.com (Verdaccio), where a
+// it. Caught 2026-08-14 on npm.internal.example.com (Verdaccio), where a
 // correctly-scoped token produced `GET /-/whoami -> 200 {}` with an
 // empty body and 401 on every private package.
 //

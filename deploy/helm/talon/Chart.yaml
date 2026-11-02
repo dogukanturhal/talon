@@ -1,12 +1,12 @@
 apiVersion: v2
 name: talon
-description: HexxLock identity-aware proxy — sole IAP for internal.example.com (NIST SP 800-207 PEP/PE/PA single-binary; OIDC RP of Falcon-ID; SpiceDB authorization)
+description: Identity-aware proxy (NIST SP 800-207 PEP/PE/PA; OIDC relying party; SpiceDB authorization)
 type: application
 version: 0.1.0
 appVersion: "0.0.0"
 maintainers:
   - name: HexxLock Platform Team
-    email: platform@hexxlock.com
+    email: dogukanturhal@hexxlock.com
 keywords:
   - identity-aware-proxy
   - zero-trust

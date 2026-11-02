@@ -41,7 +41,7 @@ deploy/helm/*/Chart.lock
 # iOS captures — these are intentionally tracked, listed here only as a
 # reminder that captures/ is NOT git-ignored. INDEX.md is the catalogue.
 # !e2e/ios/captures/
-svctoken-refresher
+/svctoken-refresher
 
 # Build artifacts (CLI binaries) — built by 'go build ./cmd/...' locally.
 /audit-replay

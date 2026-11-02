@@ -100,9 +100,9 @@ func serverWithCAEP(t *testing.T, requiredKeys []string) (*Server, <-chan []byte
 	t.Cleanup(recv.Close)
 
 	tx, err := caep.NewTransmitter(caep.TransmitterConfig{
-		SetIssuer:     "https://posture.hexxlock.com",
-		SubjectIssuer: "https://id.hexxlock.com",
-		Audience:      "https://internal.example.com",
+		SetIssuer:     "https://posture.example.com",
+		SubjectIssuer: "https://id.example.com",
+		Audience:      "https://auth.internal.example.com",
 		ReceiverURL:   recv.URL,
 	}, fakeSETSigner{})
 	if err != nil {

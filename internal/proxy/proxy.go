@@ -98,7 +98,7 @@ type Handler struct {
 // 2026-05-12 ~16:10Z: Talon audit logged decision=allow + permission=admin
 // + mfa=true (audit reads from session blob, not outbound headers), but
 // upstream frontend-falcon-admin saw zero X-Talon-* headers and bounced
-// every authenticated user to accounts.hexxlock.com.
+// every authenticated user to accounts.example.com.
 //
 // Rewrite stays as the canonical place to rewrite the URL + the
 // X-Forwarded-* family (those originate from the inbound transport,

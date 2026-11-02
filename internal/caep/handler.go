@@ -9,7 +9,7 @@ import (
 )
 
 // HTTPHandler returns the POST /caep/events handler. Wire at the
-// auth host's mux (typically https://internal.example.com/caep/events).
+// auth host's mux (typically https://auth.internal.example.com/caep/events).
 //
 // Per RFC 8935 Push Delivery:
 //

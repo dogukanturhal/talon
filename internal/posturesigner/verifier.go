@@ -30,8 +30,8 @@ func computeX5tS256(cert *x509.Certificate) string {
 
 // deviceSPIFFEPrefix is the SPIFFE URI scheme and authority for HexxLock
 // device identities (ADR 0040 D-005 — SPIFFE-aligned naming, no SPIRE).
-// Format: spiffe://hexxlock.com/device/<device-uuid>
-const deviceSPIFFEPrefix = "spiffe://hexxlock.com/device/"
+// Format: spiffe://example.com/device/<device-uuid>
+const deviceSPIFFEPrefix = "spiffe://example.com/device/"
 
 // DeviceCertVerifier validates the leaf X.509 certificate presented by
 // the agent over mTLS. It checks the full trust chain against the
@@ -229,6 +229,6 @@ func extractDeviceSPIFFE(cert *x509.Certificate) (string, error) {
 
 func isDeviceSPIFFE(u *url.URL) bool {
 	return u.Scheme == "spiffe" &&
-		u.Host == "hexxlock.com" &&
+		u.Host == "example.com" &&
 		strings.HasPrefix(u.Path, "/device/")
 }

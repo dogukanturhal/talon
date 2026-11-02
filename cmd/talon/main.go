@@ -23,6 +23,7 @@ import (
 	"github.com/dogukanturhal/talon/internal/audit"
 	"github.com/dogukanturhal/talon/internal/caep"
 	"github.com/dogukanturhal/talon/internal/config"
+	"github.com/dogukanturhal/talon/internal/devicemtls"
 	"github.com/dogukanturhal/talon/internal/controller"
 	"github.com/dogukanturhal/talon/internal/conversion"
 	"github.com/dogukanturhal/talon/internal/credexchange"
@@ -170,7 +171,7 @@ func main() {
 		spiceClient = c
 		// Read-only verification that the live cluster schema (owned
 		// exclusively by the spicedb-schema Argo CD Application — see
-		// internal/spicedb/client.go's schemaZed doc comment / an internal incident)
+		// internal/spicedb/client.go's schemaZed doc comment / t-582)
 		// contains every definition Talon requires. Talon never calls
 		// WriteSchema itself any more.
 		schemaCtx, schemaCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -222,7 +223,7 @@ func main() {
 		// TalonRoute reconciler-seeded route→group edges and the
 		// per-request user-subject CheckPermission. Without this hook
 		// every protected route returns no_permission post-login —
-		// the 2026-05-08 outage on internal.example.com.
+		// the 2026-05-08 outage on argocd.internal.example.com.
 		rp.SetSpiceDB(spiceClient)
 	} else {
 		logger.Warn("spicedb disabled (TALON_SPICEDB_ADDR or TALON_SPICEDB_TOKEN empty); role filter only")
@@ -560,7 +561,7 @@ func main() {
 		caepCache := caepReplayCache()
 		// The SET signature is verified against the transmitter's JWKS. By
 		// default that's derived from the issuer URL, but the posture-signer
-		// transmitter's issuer (posture.hexxlock.com) is mTLS-gated and
+		// transmitter's issuer (posture.example.com) is mTLS-gated and
 		// unreachable from this pod, so CAEPTransmitterJWKSURL points the
 		// fetch at the in-cluster Service. The `iss` claim is still checked
 		// against CAEPTransmitterIssuer regardless of the fetch location.
@@ -615,6 +616,18 @@ func main() {
 		}
 	}
 
+	// Device-mTLS edge (XFCC from the trusted Envoy only; audit by default).
+	if cfg.DeviceMTLSTrustedClientID != "" {
+		rt.SetDeviceMTLS(&devicemtls.Config{
+			TrustedClientID: cfg.DeviceMTLSTrustedClientID,
+			Mode:            devicemtls.ParseMode(cfg.DeviceMTLSMode),
+			Hosts:           cfg.DeviceMTLSHosts,
+		})
+		logger.Info("device mTLS edge enabled",
+			"trusted_client_id", cfg.DeviceMTLSTrustedClientID,
+			"mode", devicemtls.ParseMode(cfg.DeviceMTLSMode), "hosts", cfg.DeviceMTLSHosts)
+	}
+
 	// Two listeners: HTTPS for browser traffic, plain HTTP for /metrics
 	// scraping (kept off the TLS port to avoid TLS-handshake pollution
 	// in the metrics path).
@@ -633,6 +646,24 @@ func main() {
 		IdleTimeout:       5 * time.Minute,
 		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
+	// Device-mTLS edge listener: plaintext HTTP, same handler as mainServer.
+	// Safe only because (a) the Linkerd Server/AuthorizationPolicy on this port
+	// admit solely the Envoy mesh identity and (b) devicemtls.Resolve trusts
+	// XFCC only when l5d-client-id (set by the Linkerd inbound proxy from the
+	// peer's mTLS identity; client-supplied values are not honoured) equals the
+	// configured Envoy identity. A request lacking l5d-client-id is never trusted.
+	var edgeServer *http.Server
+	if cfg.DeviceMTLSListenAddr != "" {
+		edgeServer = &http.Server{
+			Addr:              cfg.DeviceMTLSListenAddr,
+			Handler:           mainServer.Handler,
+			ReadHeaderTimeout: mainServer.ReadHeaderTimeout,
+			ReadTimeout:       mainServer.ReadTimeout,
+			WriteTimeout:      mainServer.WriteTimeout,
+			IdleTimeout:       mainServer.IdleTimeout,
+			MaxHeaderBytes:    mainServer.MaxHeaderBytes,
+		}
+	}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", observability.Handler(reg))
 	metricsMux.HandleFunc("/healthz", health.Liveness)
@@ -642,7 +673,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	errCh := make(chan error, 3)
+	errCh := make(chan error, 4)
 	mgrCtx, mgrCancel := context.WithCancel(context.Background())
 	// mgrCancel is invoked in the shutdown sequence below — not via
 	// `defer` because this function calls os.Exit on fatal init paths,
@@ -678,7 +709,7 @@ func main() {
 		mgr, err := ctrl.NewManager(k8sCfg, manager.Options{
 			Scheme:                  schm,
 			LeaderElection:          true,
-			LeaderElectionID:        "talon-controller-leader.gateway.talon.hexxlock.com",
+			LeaderElectionID:        "talon-controller-leader.gateway.talon.example.com",
 			LeaderElectionNamespace: cfg.PodNamespace,
 			HealthProbeBindAddress:  "0", // probes already served by /healthz on the data-plane listener
 			Metrics:                 metricsserver.Options{BindAddress: "0"},
@@ -746,6 +777,14 @@ func main() {
 			errCh <- err
 		}
 	}()
+	if edgeServer != nil {
+		go func() {
+			logger.Info("device-mtls edge listener (plaintext, mesh-only)", "addr", edgeServer.Addr)
+			if err := edgeServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+			}
+		}()
+	}
 	go func() {
 		logger.Info("metrics listener", "addr", metricsServer.Addr)
 		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -842,6 +881,9 @@ func main() {
 	mgrCancel()
 	_ = mainServer.Shutdown(shutCtx)
 	_ = metricsServer.Shutdown(shutCtx)
+	if edgeServer != nil {
+		_ = edgeServer.Shutdown(shutCtx)
+	}
 	if convWebhookServer != nil {
 		_ = convWebhookServer.Shutdown(shutCtx)
 	}

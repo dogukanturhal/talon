@@ -30,11 +30,11 @@ Events emitted:
 | Posture flips compliant ↔ not-compliant | `device-compliance-change` | `iss_sub` {Falcon-ID iss, user_sub} | audit (future posture-policy hook) |
 
 SET envelope:
-- `iss` = posture-signer's issuer (`https://posture.hexxlock.com`) — the
+- `iss` = posture-signer's issuer (`https://posture.example.com`) — the
   TRANSMITTER identity; Talon verifies the SET signature against this
   issuer's JWKS and matches it to `CAEPTransmitterIssuer`.
-- `aud` = Talon auth host (`https://internal.example.com`).
-- event `subject` `iss` = **Falcon-ID** issuer (`https://id.hexxlock.com`)
+- `aud` = Talon auth host (`https://auth.internal.example.com`).
+- event `subject` `iss` = **Falcon-ID** issuer (`https://id.example.com`)
   — the user-session owner Talon keys RevokeBySubject on. (Transmitter
   identity ≠ subject identity: posture-signer asserts a fact about a
   Falcon-ID user.)

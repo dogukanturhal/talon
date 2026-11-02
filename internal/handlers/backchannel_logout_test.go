@@ -16,7 +16,7 @@ import (
 func TestValidateLogoutClaims(t *testing.T) {
 	t.Parallel()
 
-	const expectedIss = "https://id.hexxlock.com"
+	const expectedIss = "https://id.example.com"
 	const skew = 5 * time.Minute
 	now := time.Now().Unix()
 

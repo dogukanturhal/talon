@@ -9,7 +9,7 @@ import (
 )
 
 // GroupVersion is group version used to register these objects.
-var GroupVersion = schema.GroupVersion{Group: "gateway.talon.hexxlock.com", Version: "v1alpha1"}
+var GroupVersion = schema.GroupVersion{Group: "gateway.talon.example.com", Version: "v1alpha1"}
 
 // SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 var SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

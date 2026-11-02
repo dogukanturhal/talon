@@ -65,11 +65,11 @@ type AudienceMapper func(host string) string
 // validated at construction.
 type VerifierConfig struct {
 	// JWKSURL — Falcon-ID's published key set, typically
-	// "https://id.hexxlock.com/.well-known/jwks.json".
+	// "https://id.example.com/.well-known/jwks.json".
 	JWKSURL string
 
 	// ExpectedIssuer — Falcon-ID's issuer URL, typically
-	// "https://id.hexxlock.com". Pinned at construction.
+	// "https://id.example.com". Pinned at construction.
 	ExpectedIssuer string
 
 	// AudienceMapper — computes expected `aud` from request Host.
@@ -677,7 +677,7 @@ func extractBearer(authHeader string) (string, bool) {
 // header directly.
 //
 // The shape pre-check is intentionally cheap: it only rules out the
-// obvious "Basic oauth2:glpat-AbC123" PAT case so non-svctoken  // gitleaks:allow — illustrative value in a comment
+// obvious "Basic oauth2:glpat-AbC123" PAT case so non-svctoken
 // callers fall through to the original Authorization. The real
 // signature / iss / aud / exp validation is the verifier's
 // downstream job — a caller can still craft a 3-segment-shape

@@ -28,7 +28,7 @@ func TestEnvelopeRoundtrip(t *testing.T) {
 		Sub:    "user-123",
 		Email:  "alice@example.com",
 		Groups: []string{"platform-admin"},
-		Iss:    "https://id.hexxlock.com",
+		Iss:    "https://id.example.com",
 	}
 	cookieID, err := store.Create(context.Background(), in)
 	if err != nil {

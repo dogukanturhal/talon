@@ -57,7 +57,7 @@ func TestNewVerifier_RejectsEmptyConfig(t *testing.T) {
 }
 
 func TestVerifier_RoundtripMintAndVerify(t *testing.T) {
-	signer, err := NewSignerFromPEM(genTestKey(t), "https://internal.example.com")
+	signer, err := NewSignerFromPEM(genTestKey(t), "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestVerifier_RoundtripMintAndVerify(t *testing.T) {
 
 	v, err := NewVerifier(VerifierConfig{
 		JWKSURL:          jwksURL,
-		ExpectedIssuer:   "https://internal.example.com",
+		ExpectedIssuer:   "https://auth.internal.example.com",
 		ExpectedAudience: "registry.example.com",
 	})
 	if err != nil {
@@ -123,7 +123,7 @@ func TestVerifier_RejectsAudienceMismatch(t *testing.T) {
 		JWKSURL: jwksURL, ExpectedIssuer: "https://auth.ops", ExpectedAudience: "registry.example.com",
 	})
 	// Token minted for argocd, not harbor — must reject.
-	token, _ := signer.Sign(&session.Blob{Sub: "u"}, "internal.example.com")
+	token, _ := signer.Sign(&session.Blob{Sub: "u"}, "argocd.internal.example.com")
 	_, err := v.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrAudienceMismatch) {
 		t.Fatalf("got %v, want ErrAudienceMismatch", err)
@@ -134,7 +134,7 @@ func TestVerifier_RejectsIssuerMismatch(t *testing.T) {
 	signer, _ := NewSignerFromPEM(genTestKey(t), "https://wrong.issuer")
 	jwksURL, _ := jwksTestServer(t, signer)
 	v, _ := NewVerifier(VerifierConfig{
-		JWKSURL: jwksURL, ExpectedIssuer: "https://internal.example.com", ExpectedAudience: "a",
+		JWKSURL: jwksURL, ExpectedIssuer: "https://auth.internal.example.com", ExpectedAudience: "a",
 	})
 	token, _ := signer.Sign(&session.Blob{Sub: "u"}, "a")
 	_, err := v.VerifyToken(context.Background(), token)

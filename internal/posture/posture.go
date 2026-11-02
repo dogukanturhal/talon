@@ -11,9 +11,9 @@
 // statement of device compliance:
 //
 //	{
-//	  "iss": "https://posture.hexxlock.com",
+//	  "iss": "https://posture.example.com",
 //	  "sub": "device:<machine-uuid>",       // attested device id
-//	  "aud": "https://internal.example.com",
+//	  "aud": "https://auth.internal.example.com",
 //	  "iat": 1717000000,
 //	  "exp": 1717003600,                     // <=1h freshness window
 //	  "user_sub": "user-123",                // bind to user OR omit

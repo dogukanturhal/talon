@@ -21,9 +21,9 @@
 // Claims
 // ------
 //
-//	iss : https://internal.example.com  (Talon's external URL)
+//	iss : https://auth.internal.example.com  (Talon's external URL)
 //	sub : iam_users.id (Falcon-ID subject, 36-char UUID)
-//	aud : the protected host this token authorises (e.g. internal.example.com)
+//	aud : the protected host this token authorises (e.g. falcon.internal.example.com)
 //	iat / exp : 60-second window — every proxied request gets a fresh token
 //	email, groups, roles, tenant_id, sso_chain_id : identity payload
 //	  (roles mirrors groups verbatim — see IdentityClaims.Roles)
@@ -162,7 +162,7 @@ type retiredKey struct {
 // fail-closed below that to keep tier-1 supply chain).
 //
 // issuer is the `iss` claim every signed JWT will carry — typically
-// Talon's ExternalURL (e.g. "https://internal.example.com"). Verifiers
+// Talon's ExternalURL (e.g. "https://auth.internal.example.com"). Verifiers
 // MUST check `iss` matches this exact string.
 func NewSignerFromPEM(pemBytes []byte, issuer string) (*Signer, error) {
 	if len(pemBytes) == 0 {

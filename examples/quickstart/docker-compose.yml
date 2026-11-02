@@ -1,0 +1,140 @@
+# Talon quickstart: one proxy, one protected upstream, and the services Talon
+# needs, all on one machine. Demo credentials only; nothing here is meant to be
+# exposed beyond localhost.
+#
+#   docker compose up --build
+#
+# Hostnames end in .localtest.me, which resolves to 127.0.0.1 in public DNS, so
+# no /etc/hosts edit is needed. Talon matches the Host header without a port, so
+# it is published on 443 (see README.md for rootless Docker).
+
+name: talon-quickstart
+
+services:
+  # Self-signed certificate for Talon (browser-facing) and SpiceDB (gRPC).
+  certs:
+    image: alpine/openssl:3.5.9
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -s /certs/tls.crt ]; then
+          openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
+            -keyout /certs/tls.key -out /certs/tls.crt -subj "/CN=talon-demo" \
+            -addext "subjectAltName=DNS:auth.demo.localtest.me,DNS:whoami.demo.localtest.me,DNS:spicedb"
+          chmod 644 /certs/tls.key /certs/tls.crt
+        fi
+    volumes:
+      - certs:/certs
+
+  # Sessions live here.
+  redis:
+    image: redis:7-alpine
+
+  # Relationship store. The schema and two demo relationships are loaded from
+  # spicedb-bootstrap.yaml into the in-memory datastore at start-up.
+  spicedb:
+    image: authzed/spicedb:v1.57.0
+    command:
+      - serve
+      - --grpc-preshared-key=demo-preshared-key
+      - --datastore-engine=memory
+      - --datastore-bootstrap-files=/bootstrap/spicedb-bootstrap.yaml
+      - --grpc-tls-cert-path=/certs/tls.crt
+      - --grpc-tls-key-path=/certs/tls.key
+    volumes:
+      - ./spicedb-bootstrap.yaml:/bootstrap/spicedb-bootstrap.yaml:ro
+      - certs:/certs:ro
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+
+  # Stand-in identity provider. Any username works; the login page sets `sub`
+  # to what you type, and mock-oidc.json adds a `groups` claim to every token.
+  oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.11
+    environment:
+      JSON_CONFIG_PATH: /config/mock-oidc.json
+    volumes:
+      - ./mock-oidc.json:/config/mock-oidc.json:ro
+    ports:
+      - "8080:8080"
+    networks:
+      default:
+        # Containers reach the IdP under the same name the browser uses, so the
+        # issuer URL is identical on both sides.
+        aliases: [oidc.localtest.me]
+
+  # The application being protected. It echoes the request it receives, including
+  # the X-Talon-* identity headers Talon adds.
+  whoami:
+    image: traefik/whoami:v1.11.0
+    networks:
+      default:
+        # TALON_PROTECTED_HOSTS_JSON upstreams must look like service.namespace.
+        aliases: [whoami.demo]
+
+  talon:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: on-failure
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      spicedb:
+        condition: service_started
+      oidc:
+        condition: service_started
+      whoami:
+        condition: service_started
+    environment:
+      TALON_EXTERNAL_URL: https://auth.demo.localtest.me
+      TALON_COOKIE_DOMAIN: .demo.localtest.me
+      TALON_COOKIE_ENCRYPT_KEY: dGFsb24tZGVtby1jb29raWUta2V5LTAxMjM0NTY3ODk=
+      TALON_TLS_CERT_FILE: /certs/tls.crt
+      TALON_TLS_KEY_FILE: /certs/tls.key
+
+      TALON_OIDC_ISSUER_URL: http://oidc.localtest.me:8080/default
+      TALON_OIDC_CLIENT_ID: talon
+      TALON_OIDC_CLIENT_SECRET: demo-client-secret
+      # The stock scope list also asks for "roles", which not every IdP knows.
+      TALON_OIDC_SCOPES: openid,profile,email,groups
+
+      TALON_REDIS_ADDR: redis:6379
+
+      TALON_SPICEDB_ADDR: spicedb:50051
+      TALON_SPICEDB_TOKEN: demo-preshared-key
+      # Login still requires this value in the `groups` or `roles` claim; every
+      # request after that is decided by SpiceDB alone (ROLE_GATE_MODE=off).
+      TALON_REQUIRED_ROLE: demo-user
+      TALON_ROLE_GATE_MODE: "off"
+      # Fail closed at once if SpiceDB or Redis is unreachable, so the demo
+      # behaves the same way every time.
+      TALON_DDIL_OFFLINE_PDP: "false"
+      TALON_DDIL_OFFLINE_SESSION: "false"
+
+      # No Kubernetes here: routes come from this static list instead of
+      # TalonRoute resources.
+      TALON_ENABLE_CONTROLLER: "false"
+      TALON_PROTECTED_HOSTS_JSON: '[{"host":"whoami.demo.localtest.me","upstream":"whoami.demo:80"}]'
+
+      TALON_LOG_FORMAT: text
+    volumes:
+      - certs:/certs:ro
+    ports:
+      - "443:8443"
+    networks:
+      default: {}
+
+  # Optional: run `docker compose run --rm zed ...` to edit relationships.
+  zed:
+    image: authzed/zed:v1.14.0
+    profiles: [tools]
+    depends_on:
+      - spicedb
+
+volumes:
+  certs:

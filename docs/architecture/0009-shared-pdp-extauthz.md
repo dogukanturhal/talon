@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (Phase 7.1 in flight 2026-06-01)
 - **Date:** 2026-06-01
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Refines:** ADR 0001 §3 (PEP/PDP roles), ADR 0005 (forward-auth)
 - **Related:** ADR 0003 (TalonRoute CRD), Gateway API GEP-1494, Envoy
   service.auth.v3
@@ -22,10 +22,10 @@ the two adapters.
 
 The HexxLock edge has two tiers with two data planes:
 
-- **Admin** — Talon fronts 17 `internal.example.com` hosts. Browser
+- **Admin** — Talon fronts 17 `*.internal.example.com` hosts. Browser
   sessions, MFA step-up, SpiceDB authz, per-host TalonRoute policy,
   audit chain (ADR 0031).
-- **Customer** — APISIX fronts `*.hexxlock.com` + `api.example.app`.
+- **Customer** — APISIX fronts `*.example.com` + `api.example.app`.
   Rate-limit, WAF, transformation, public-internet adversary
   defense.
 
@@ -265,4 +265,3 @@ Both adapters stay live during transition:
   https://istio.io/latest/blog/2021/better-external-authz/
 - Research workflow: 22-claim adversarially-verified synthesis,
   2026-06-01
-  (transcript: `~/.claude/projects/.../wf_ebc36449-c4a/`)

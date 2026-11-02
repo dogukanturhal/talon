@@ -75,7 +75,7 @@ func newSchemaValidator(path string, strict bool) (*schemaValidator, error) {
 	var resourceID string
 	if path == "" {
 		source = embeddedSchema
-		resourceID = "https://talon.hexxlock.com/schemas/0041-audit-record.json"
+		resourceID = "https://talon.example.com/schemas/0041-audit-record.json"
 	} else {
 		var err error
 		// File path — let the compiler read directly. v6 supports

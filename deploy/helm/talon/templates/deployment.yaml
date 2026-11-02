@@ -37,7 +37,12 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
+  # With the HPA on, the HPA owns spec.replicas. Rendering it here made Argo
+  # self-heal reset the count every sync while the HPA scaled it back up, so
+  # pods were killed continuously and *.ops hosts returned intermittent 502s.
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   # Keep only 2 ReplicaSet history entries instead of the default 10.
   # Talon is rolled frequently by image-updater (every 40-char SHA bump
   # from CI lands here within minutes) and by Reloader on Secret/CM
@@ -94,6 +99,11 @@ spec:
             - name: metrics
               containerPort: {{ .Values.service.ports.metrics }}
               protocol: TCP
+            {{- if and .Values.config.deviceMtls.trustedClientId .Values.config.deviceMtls.listenPort }}
+            - name: http-edge-mtls
+              containerPort: {{ .Values.config.deviceMtls.listenPort }}
+              protocol: TCP
+            {{- end }}
             {{- if .Values.extAuthz.enabled }}
             # Phase 7.2 — Envoy ext_authz v3 gRPC listener. Backs the
             # talon-extauthz Service so APISIX (and any future data
@@ -176,6 +186,20 @@ spec:
               value: {{ .Values.config.caep.transmitterJwksUrl | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.config.deviceMtls.trustedClientId }}
+            - name: TALON_DEVICE_MTLS_TRUSTED_CLIENT_ID
+              value: {{ .Values.config.deviceMtls.trustedClientId | quote }}
+            - name: TALON_DEVICE_MTLS_MODE
+              value: {{ .Values.config.deviceMtls.mode | default "audit" | quote }}
+            {{- if .Values.config.deviceMtls.listenPort }}
+            - name: TALON_DEVICE_MTLS_LISTEN_ADDR
+              value: {{ printf ":%d" (int .Values.config.deviceMtls.listenPort) | quote }}
+            {{- end }}
+            {{- if .Values.config.deviceMtls.hosts }}
+            - name: TALON_DEVICE_MTLS_HOSTS
+              value: {{ .Values.config.deviceMtls.hosts | join "," | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.config.posture.enabled }}
             # ZTNA device-posture verifier (ADR 0040 / 0011). Verifies the
             # X-Talon-Posture JWS on routes that declare a policyRego; routes
@@ -193,7 +217,7 @@ spec:
               value: {{ .Values.config.posture.maxAgeSeconds | quote }}
             {{- end }}
             {{- if .Values.config.posture.jwksUrl }}
-            # The posture issuer's public JWKS (https://posture.hexxlock.com)
+            # The posture issuer's public JWKS (https://posture.example.com)
             # is Envoy device-cert-mTLS-gated and unreachable from this pod;
             # point the verifier at the in-cluster posture-signer Service JWKS.
             - name: TALON_POSTURE_JWKS_URL

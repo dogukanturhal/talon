@@ -660,7 +660,7 @@ func TestExtractJWTFromBasicPassword_Negatives(t *testing.T) {
 		{"malformed base64", "Basic !!!"},
 		{"no colon", "Basic " + base64.StdEncoding.EncodeToString([]byte("nocolon"))},
 		{"empty password", "Basic " + base64.StdEncoding.EncodeToString([]byte("user:"))},
-		{"PAT password", "Basic " + base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-AbC123"))}, // gitleaks:allow — test fixture, not a real credential
+		{"PAT password", "Basic " + base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-AbC123"))},
 		{"2-segment password", "Basic " + base64.StdEncoding.EncodeToString([]byte("u:aaaaaaaaaaa.bbbbbbbbbbb"))},
 		{"4-segment password", "Basic " + base64.StdEncoding.EncodeToString([]byte("u:aaaaaaaaaaa.bbbbbbbbbbb.ccccccccccc.dddddddddd"))},
 		{"short segments", "Basic " + base64.StdEncoding.EncodeToString([]byte("u:a.b.c"))},

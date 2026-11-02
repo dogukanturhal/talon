@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"html/template"
 	"net"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"github.com/dogukanturhal/talon/internal/audit"
 	"github.com/dogukanturhal/talon/internal/config"
 	"github.com/dogukanturhal/talon/internal/credexchange"
+	"github.com/dogukanturhal/talon/internal/devicemtls"
 	"github.com/dogukanturhal/talon/internal/handlers"
 	"github.com/dogukanturhal/talon/internal/identityjwt"
 	tlog "github.com/dogukanturhal/talon/internal/log"
@@ -111,6 +113,9 @@ type Router struct {
 	// verifier on every Verify; routes without that requirement are
 	// unaffected.
 	postureVerifier *posture.Verifier
+	// deviceMTLS configures the XFCC device-identity path; nil = off (XFCC
+	// is left untouched).
+	deviceMTLS *devicemtls.Config
 	mu              sync.RWMutex
 	upstreams       map[string]upstreamEntry // host → proxy handler + permission
 }
@@ -232,7 +237,7 @@ type RegisterUpstreamParams struct {
 
 // New builds a Router with no upstreams registered. Phase 1 wires the
 // pilot host (prometheus.ops) here once the chart's protectedHosts list
-// is non-empty; for the auth host (internal.example.com) only the
+// is non-empty; for the auth host (auth.internal.example.com) only the
 // /auth/* + health endpoints serve.
 func New(cfg *config.Config, rp *oidc.RP, store *session.Store, pe *policy.CompositePolicy, metrics *observability.Metrics, health *handlers.Health, audit *audit.Emitter, admin *handlers.Admin) *Router {
 	return &Router{
@@ -334,6 +339,23 @@ func (r *Router) SetPostureVerifier(v *posture.Verifier) {
 	r.postureVerifier = v
 }
 
+type deviceIdentityCtxKey struct{}
+
+// deviceIdentity returns the device-mTLS identity resolved at the start of
+// ServeHTTP (zero value, present=false, when unavailable).
+func deviceIdentity(ctx context.Context) devicemtls.Identity {
+	if id, ok := ctx.Value(deviceIdentityCtxKey{}).(devicemtls.Identity); ok {
+		return id
+	}
+	return devicemtls.Identity{Channel: devicemtls.ChannelDeviceMTLS}
+}
+
+// SetDeviceMTLS wires the device-mTLS edge config (XFCC trust + audit/enforce
+// mode). Optional; nil keeps the pre-existing behaviour.
+func (r *Router) SetDeviceMTLS(c *devicemtls.Config) {
+	r.deviceMTLS = c
+}
+
 // SetIAPSigner wires the IAP identity-JWT signer. After this call:
 //
 //   - Every proxy.Handler subsequently registered via RegisterUpstream
@@ -431,7 +453,7 @@ func (r *Router) RegisterUpstream(host string, p RegisterUpstreamParams) {
 
 // sessionChannel classifies the request's access channel (ADR 0044). A
 // request whose host matches a configured access-zone suffix
-// (TALON_CLIENTLESS_HOST_SUFFIXES, e.g. ".access.hexxlock.com") is the
+// (TALON_CLIENTLESS_HOST_SUFFIXES, e.g. ".access.example.com") is the
 // agentless "clientless" channel — no device cert, browser-attestable signals
 // only. Everything else is the default agent "cookie" channel. Empty suffix
 // list disables the clientless tier, so every session stays "cookie".
@@ -547,6 +569,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		"method", req.Method, "path", req.URL.Path, "host", req.Host,
 	)
 	ctx = tlog.Into(ctx, logger)
+	// Device-mTLS edge: XFCC is believed only from the configured Envoy
+	// identity and is ALWAYS stripped from the request so no later reader or
+	// upstream can see a client-supplied value.
+	ctx = context.WithValue(ctx, deviceIdentityCtxKey{},
+		devicemtls.Resolve(r.deviceMTLS, req.Header, time.Now()))
 	req = req.WithContext(ctx)
 
 	// Always-public probe endpoints — host-agnostic by design (kube
@@ -565,7 +592,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Why: every protected host runs through Talon, but downstream apps
 	// like ArgoCD ship their own OIDC Relying Party that uses the same
 	// `/auth/callback` path on their own hostname (e.g.
-	// internal.example.com/auth/callback). If Talon claimed
+	// argocd.internal.example.com/auth/callback). If Talon claimed
 	// /auth/callback for every host, the IdP's 302 back to argocd's
 	// callback would be intercepted by Talon, fail the handshake-state
 	// check (the state cookie belongs to argocd, not Talon), and
@@ -1059,6 +1086,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	verdict := r.pe.Evaluate(req.Context(), blob, req.Host, up.permission, up.sensitivity)
+	if verdict.Decision == policy.Error {
+		// Transient authz backend error (e.g. cold SpiceDB conn): retry once
+		// before surfacing a retryable 503.
+		verdict = r.pe.Evaluate(req.Context(), blob, req.Host, up.permission, up.sensitivity)
+	}
 	r.metrics.AuthDecision.WithLabelValues(req.Host, string(verdict.Decision), string(verdict.Reason)).Inc()
 	if verdict.Decision != policy.Allow {
 		logger.Warn("denied", "reason", verdict.Reason, "sub", blob.Sub)
@@ -1067,7 +1099,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Method: req.Method, Path: req.URL.Path, Reason: string(verdict.Reason),
 			SessionID: cookie.Value, Permission: up.permission, Issuer: blob.Iss,
 		})
-		r.serveAccessDenied(w, req, http.StatusForbidden, string(verdict.Reason))
+		r.serveVerdictDenied(w, req, verdict)
 		return
 	}
 
@@ -1164,6 +1196,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			},
 			Session: policy.RegoInputSession{Channel: channel},
 		}
+		devID := deviceIdentity(req.Context())
+		if r.deviceMTLS.Enabled() {
+			regoIn.DeviceMTLS = &policy.RegoInputDeviceMTLS{
+				Present: devID.Present, Valid: devID.Valid, DeviceID: devID.DeviceID,
+				Kind: devID.Kind, Channel: devID.Channel,
+			}
+		}
 
 		// Project the verified X-Talon-Posture claim into RegoInput.Posture
 		// so the ZTNA baseline Rego bundle (docs/policy/ztna/ztna_baseline.rego)
@@ -1199,6 +1238,33 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				} else {
 					postureClaims = pc
 				}
+			}
+		}
+
+		// Device-mTLS check (cert device <-> posture JWS sub binding). Audit
+		// mode (default) only logs/counts would_deny; enforce denies.
+		if r.deviceMTLS.Enabled() {
+			postureSub := ""
+			if postureClaims != nil {
+				postureSub = postureClaims.Subject
+			}
+			if dd := devicemtls.Decide(r.deviceMTLS, devID, postureSub, req.Host); dd.Reason != "" {
+				if dd.Deny {
+					r.metrics.AuthDecision.WithLabelValues(req.Host, "deny", dd.Reason).Inc()
+					r.audit.Deny(req.Context(), audit.Record{
+						Sub: blob.Sub, Email: blob.Email, Route: req.Host,
+						Method: req.Method, Path: req.URL.Path, Reason: dd.Reason,
+						SessionID: cookie.Value, Permission: up.permission, Issuer: blob.Iss,
+					})
+					r.serveAccessDenied(w, req, http.StatusForbidden, dd.Reason)
+					return
+				}
+				r.metrics.AuthDecision.WithLabelValues(req.Host, "would_deny", dd.Reason).Inc()
+				logger.Warn("device mTLS would_deny (audit mode)",
+					"reason", dd.Reason, "host", req.Host, "sub", blob.Sub,
+					"cert_present", devID.Present, "cert_valid", devID.Valid,
+					"cert_device", devID.DeviceID, "cert_kind", devID.Kind,
+					"posture_sub", postureSub)
 			}
 		}
 		if postureClaims != nil {
@@ -1638,9 +1704,33 @@ func postureDegradedDeny(sensitivity string) bool {
 // a login prompt) but policy refused the resource. Machine clients (XHR / asset
 // / non-text/html API callers) get the plain status + an X-Talon-Reason header,
 // unchanged. Browser NAVIGATION gets a branded HTML page that explains WHY and
-// how to remediate (enroll / enable HexxLock Access) instead of a bare
+// how to remediate (enroll / enable Access Agent) instead of a bare
 // "forbidden" string — so a user whose device isn't enrolled sees actionable
 // guidance, not a dead page. Always sets X-Talon-Reason + Cache-Control.
+func (r *Router) serveVerdictDenied(w http.ResponseWriter, req *http.Request, v policy.Verdict) {
+	if v.Decision == policy.Error {
+		r.serveAuthzUnavailable(w, req, string(v.Reason))
+		return
+	}
+	r.serveAccessDenied(w, req, http.StatusForbidden, string(v.Reason))
+}
+
+// serveAuthzUnavailable answers a policy Error (authz backend failure) with a
+// retryable 503 instead of a misleading 403. Browser navigations get a page
+// that auto-refreshes.
+func (r *Router) serveAuthzUnavailable(w http.ResponseWriter, req *http.Request, reason string) {
+	w.Header().Set("X-Talon-Reason", reason)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "2")
+	if isXHROrAssetRequest(req) {
+		http.Error(w, "temporary authorization error, retry", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = io.WriteString(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="2"><title>Retrying…</title></head><body style="font-family:system-ui,sans-serif;text-align:center;margin-top:20vh"><h1>Temporary authorization error</h1><p>Retrying…</p></body></html>`)
+}
+
 func (r *Router) serveAccessDenied(w http.ResponseWriter, req *http.Request, status int, reason string) {
 	w.Header().Set("X-Talon-Reason", reason)
 	w.Header().Set("Cache-Control", "no-store")
@@ -1674,10 +1764,10 @@ func friendlyDeny(reason string) (title, remedy string) {
 	switch reason {
 	case "rego_denied":
 		return "Your device isn’t reporting a valid security posture",
-			"This resource requires HexxLock Access to be installed and running so your device can prove its security posture (disk encryption, screen lock, device certificate). Enable HexxLock Access and reload. If your device is enrolled but access is still blocked, this resource may require a managed corporate device."
+			"This resource requires Access Agent to be installed and running so your device can prove its security posture (disk encryption, screen lock, device certificate). Enable Access Agent and reload. If your device is enrolled but access is still blocked, this resource may require a managed corporate device."
 	case "clientless_critical_denied":
 		return "This resource requires a managed corporate device",
-			"You’re reaching this over agentless browser access, which cannot reach the most sensitive resources. Use a HexxLock Access–enrolled corporate device, or contact your administrator."
+			"You’re reaching this over agentless browser access, which cannot reach the most sensitive resources. Use an Access Agent–enrolled corporate device, or contact your administrator."
 	default:
 		return "You don’t have permission to access this resource",
 			"Your session is valid, but policy does not permit access here. If you believe this is an error, contact your administrator."
@@ -1686,7 +1776,7 @@ func friendlyDeny(reason string) (title, remedy string) {
 
 // denyTpl renders the branded access-denied page (ADR 0044 §UX). iOS-safe full
 // <html> shape per ADR 0001 §5.d. Shows the title + remediation + an optional
-// "Enable HexxLock Access" CTA when AccessHelpURL is configured.
+// "Enable Access Agent" CTA when AccessHelpURL is configured.
 var denyTpl = template.Must(template.New("access_denied").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1716,7 +1806,7 @@ var denyTpl = template.Must(template.New("access_denied").Parse(`<!DOCTYPE html>
     <div class="badge"><span class="dot"></span> Access denied</div>
     <h1>{{.Title}}</h1>
     <p>{{.Remedy}}</p>
-    {{if .HelpURL}}<a class="cta" href="{{.HelpURL}}">Enable HexxLock Access</a>{{end}}
+    {{if .HelpURL}}<a class="cta" href="{{.HelpURL}}">Enable Access Agent</a>{{end}}
     <div class="meta">Resource: <code>{{.Host}}</code> &middot; Reason: <code>{{.Reason}}</code></div>
   </div>
 </body>

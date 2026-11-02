@@ -17,7 +17,7 @@ import (
 func TestWriteHTMLRedirect_FullScaffolding(t *testing.T) {
 	t.Parallel()
 	rr := httptest.NewRecorder()
-	target := "https://id.hexxlock.com/oauth/authorize?client_id=svc-talon&state=abc"
+	target := "https://id.example.com/oauth/authorize?client_id=svc-talon&state=abc"
 	oidc.WriteHTMLRedirect(rr, target)
 
 	if rr.Code != 302 {
@@ -64,7 +64,7 @@ func TestWriteHTMLRedirect_FullScaffolding(t *testing.T) {
 func TestWriteHTMLRedirect_HTMLEscaping(t *testing.T) {
 	t.Parallel()
 	rr := httptest.NewRecorder()
-	oidc.WriteHTMLRedirect(rr, `https://id.hexxlock.com/x?foo="><script>alert(1)</script>`)
+	oidc.WriteHTMLRedirect(rr, `https://id.example.com/x?foo="><script>alert(1)</script>`)
 	body := rr.Body.String()
 	if strings.Contains(body, "<script>alert(1)</script>") {
 		t.Fatal("body contains unescaped <script> tag — XSS regression")

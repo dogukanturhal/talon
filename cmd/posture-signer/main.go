@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Command posture-signer is the ZTNA Phase 4 JWS issuer for device-posture
-// heartbeats. It receives mTLS-authenticated heartbeats from HexxLock Access
+// heartbeats. It receives mTLS-authenticated heartbeats from Access Agent
 // agents, validates the device certificate chain, and mints RS256 JWS tokens
 // backed by Vault Transit so agents can present X-Talon-Posture on their
 // requests (verified by internal/posture in the Talon proxy).
@@ -53,9 +53,9 @@ func main() {
 		"path to the Vault token file written by the Vault Agent Injector sidecar")
 	deviceCAPool := fs.String("device-ca-pool", "/etc/posture-signer/device-ca.pem",
 		"path to PEM file containing jess-device-ca root certificate(s)")
-	issuer := fs.String("issuer", "https://posture.hexxlock.com",
+	issuer := fs.String("issuer", "https://posture.example.com",
 		"iss claim for minted JWS tokens (must match TrustedIssuers in Talon's verifier config)")
-	audience := fs.String("audience", "https://internal.example.com",
+	audience := fs.String("audience", "https://auth.internal.example.com",
 		"aud claim for minted JWS tokens (must match ExpectedAudience in Talon's verifier config)")
 	logLevel := fs.String("log-level", "info", "log level: debug, info, warn, error")
 	_ = fs.Parse(os.Args[1:])
@@ -136,7 +136,7 @@ func main() {
 	if os.Getenv("POSTURE_CAEP_ENABLED") == "true" {
 		tx, terr := caep.NewTransmitter(caep.TransmitterConfig{
 			SetIssuer:     *issuer,
-			SubjectIssuer: envOr("POSTURE_CAEP_SUBJECT_ISSUER", "https://id.hexxlock.com"),
+			SubjectIssuer: envOr("POSTURE_CAEP_SUBJECT_ISSUER", "https://id.example.com"),
 			Audience:      envOr("POSTURE_CAEP_AUDIENCE", *audience),
 			ReceiverURL:   os.Getenv("POSTURE_CAEP_RECEIVER_URL"),
 		}, issuerSvc)

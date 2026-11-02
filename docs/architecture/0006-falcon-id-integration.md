@@ -2,7 +2,7 @@
 
 - **Status:** Stub (filling alongside Gap 1 — week 1, ongoing)
 - **Date:** 2026-04-27 (stub)
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Related:** `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md` Gap 1;
   ADR 0001 §5.a (request flow), ADR 0001 §6 (continuous verification),
   ADR 0002 §4.1 (session blob shape — claim sources), ADR 0003 §5
@@ -73,7 +73,7 @@ on-call engineer share a model:
   cookie (memory: internal engineering notes —
   the codepath that needs the dual-write).
 - post_logout_redirect_uri returns the user to
-  `internal.example.com/auth/logged-out` (the branded
+  `auth.internal.example.com/auth/logged-out` (the branded
   redirect-completion page from `d69ec71`).
 
 ### 3.5 The `falcon_idp_session` two-write-site invariant
@@ -93,7 +93,7 @@ on-call engineer share a model:
 >   `internal/handlers/oauth_provider_handler.go`) — same shape Talon
 >   adopts in `internal/oidc/redirect.go` (ADR 0001 §5.d).
 > - JWKS endpoint at
->   `https://id.hexxlock.com/.well-known/jwks.json`; cache TTL 10 min
+>   `https://id.example.com/.well-known/jwks.json`; cache TTL 10 min
 >   in Talon (Gap 6).
 > - Falcon-ID rotates refresh tokens per OAuth 2.0 BCP §4.14; Talon CV
 >   persists rotated tokens (`internal/cv/runner.go:235-245`).

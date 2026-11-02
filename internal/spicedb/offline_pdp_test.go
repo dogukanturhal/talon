@@ -39,7 +39,7 @@ func newTestOfflinePDP(t *testing.T, fc *resilient.FakeClock, m OfflinePDPMetric
 }
 
 const (
-	tHost = "internal.example.com"
+	tHost = "argocd.internal.example.com"
 	tSub  = "user-123"
 	tPerm = "access"
 )

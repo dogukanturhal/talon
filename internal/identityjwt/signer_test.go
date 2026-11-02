@@ -43,15 +43,15 @@ func signClaimsViaJose(s *Signer, claims IdentityClaims) (string, error) {
 
 func TestNewSignerFromPEM_PKCS1Roundtrip(t *testing.T) {
 	pemBytes := genTestKey(t)
-	signer, err := NewSignerFromPEM(pemBytes, "https://internal.example.com")
+	signer, err := NewSignerFromPEM(pemBytes, "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatalf("NewSignerFromPEM: %v", err)
 	}
 	if signer.Kid() == "" {
 		t.Error("Kid() empty — kid is required for JWKS rotation")
 	}
-	if signer.Issuer() != "https://internal.example.com" {
-		t.Errorf("Issuer() = %q, want %q", signer.Issuer(), "https://internal.example.com")
+	if signer.Issuer() != "https://auth.internal.example.com" {
+		t.Errorf("Issuer() = %q, want %q", signer.Issuer(), "https://auth.internal.example.com")
 	}
 }
 
@@ -66,7 +66,7 @@ func TestNewSignerFromPEM_PKCS8Roundtrip(t *testing.T) {
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 
-	signer, err := NewSignerFromPEM(pemBytes, "https://internal.example.com")
+	signer, err := NewSignerFromPEM(pemBytes, "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatalf("NewSignerFromPEM PKCS#8: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestNewSignerFromPEM_RejectsBelowTwoThousandForty_EightBitKey(t *testing.T)
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(weakKey),
 	})
-	if _, err := NewSignerFromPEM(pemBytes, "https://internal.example.com"); err == nil {
+	if _, err := NewSignerFromPEM(pemBytes, "https://auth.internal.example.com"); err == nil {
 		t.Fatal("expected error for sub-2048-bit key, got nil")
 	}
 }
@@ -108,7 +108,7 @@ func TestNewSignerFromPEM_RejectsMalformedPEM(t *testing.T) {
 
 func TestSign_ClaimsRoundtripAndVerify(t *testing.T) {
 	pemBytes := genTestKey(t)
-	signer, err := NewSignerFromPEM(pemBytes, "https://internal.example.com")
+	signer, err := NewSignerFromPEM(pemBytes, "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestSign_ClaimsRoundtripAndVerify(t *testing.T) {
 		SID:        "test-sid",
 	}
 
-	rawJWT, err := signer.Sign(blob, "internal.example.com")
+	rawJWT, err := signer.Sign(blob, "falcon.internal.example.com")
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -144,14 +144,14 @@ func TestSign_ClaimsRoundtripAndVerify(t *testing.T) {
 		t.Fatalf("verify+extract claims: %v", err)
 	}
 
-	if out.Issuer != "https://internal.example.com" {
-		t.Errorf("iss = %q, want https://internal.example.com", out.Issuer)
+	if out.Issuer != "https://auth.internal.example.com" {
+		t.Errorf("iss = %q, want https://auth.internal.example.com", out.Issuer)
 	}
 	if out.Subject != blob.Sub {
 		t.Errorf("sub = %q, want %q", out.Subject, blob.Sub)
 	}
-	if out.Audience != "internal.example.com" {
-		t.Errorf("aud = %q, want internal.example.com", out.Audience)
+	if out.Audience != "falcon.internal.example.com" {
+		t.Errorf("aud = %q, want falcon.internal.example.com", out.Audience)
 	}
 	if out.Email != blob.Email {
 		t.Errorf("email = %q, want %q", out.Email, blob.Email)
@@ -197,7 +197,7 @@ func TestSign_ClaimsRoundtripAndVerify(t *testing.T) {
 // The blob deliberately sets Roles to a DIFFERENT value than Groups so a
 // regression that (wrongly) sourced the claim from blob.Roles would fail.
 func TestSign_RolesClaimMirrorsGroupsSource(t *testing.T) {
-	signer, err := NewSignerFromPEM(genTestKey(t), "https://internal.example.com")
+	signer, err := NewSignerFromPEM(genTestKey(t), "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestSign_RolesClaimMirrorsGroupsSource(t *testing.T) {
 		Roles:  []string{"platform_admin", "iam_admin"},     // internal-only; must NOT leak into the claim
 	}
 
-	rawJWT, err := signer.Sign(blob, "internal.example.com")
+	rawJWT, err := signer.Sign(blob, "eyrie.internal.example.com")
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestSign_RejectsEmptyAudience(t *testing.T) {
 
 func TestSign_RejectsNilBlob(t *testing.T) {
 	signer, _ := NewSignerFromPEM(genTestKey(t), "https://auth.ops")
-	if _, err := signer.Sign(nil, "internal.example.com"); err == nil {
+	if _, err := signer.Sign(nil, "falcon.internal.example.com"); err == nil {
 		t.Fatal("expected error for nil blob, got nil")
 	}
 }
@@ -261,13 +261,13 @@ func TestSign_RejectsNilBlob(t *testing.T) {
 func TestSign_RejectsNilSigner(t *testing.T) {
 	var s *Signer
 	blob := &session.Blob{Sub: "s"}
-	if _, err := s.Sign(blob, "internal.example.com"); err == nil {
+	if _, err := s.Sign(blob, "falcon.internal.example.com"); err == nil {
 		t.Fatal("expected error for nil signer, got nil")
 	}
 }
 
 func TestJWKSHandler_ServesValidJWKS(t *testing.T) {
-	signer, err := NewSignerFromPEM(genTestKey(t), "https://internal.example.com")
+	signer, err := NewSignerFromPEM(genTestKey(t), "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

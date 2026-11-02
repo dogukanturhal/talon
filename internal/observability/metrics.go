@@ -63,11 +63,11 @@ type Metrics struct {
 	// (per internal engineering notes memory).
 	//
 	// Labels:
-	//   route — request host (e.g., "internal.example.com")
+	//   route — request host (e.g., "grafana.internal.example.com")
 	//
 	// Used by the post-Sign-Out E2E synthetic to assert the cascade
 	// actually blocks subsequent requests within <5s of fan-out
-	// (see talon/e2e/playwright/tests/slo-cascade.spec.ts).
+	//.
 	EdgeRevokeBlock *prometheus.CounterVec
 
 	// IAPTokenSign counts every IAP identity-token mint attempt

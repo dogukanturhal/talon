@@ -264,41 +264,30 @@ allow if {
 # Deny reasons — concrete, audit-log friendly
 #
 # These short-circuit `deny_reason` to a specific cause so the 403
-# body + audit log carry useful diagnostics. Order matters: most
+# body + audit log carry useful diagnostics. One else-chain (complete rules
+# that can match together raise eval_conflict_error); order = precedence, most
 # specific first.
 # ------------------------------------------------------------------ #
 
 deny_reason := "ztna: missing posture (no X-Talon-Posture header or verification failed)" if {
 	not input.posture
-}
-
-deny_reason := "ztna: posture stale (iat too old for tier)" if {
+} else := "ztna: posture stale (iat too old for tier)" if {
 	input.posture
 	not posture_fresh
-}
-
-deny_reason := "ztna: device cert required for TIER_CORP" if {
+} else := "ztna: device cert required for TIER_CORP" if {
 	effective_tier == tier_corp
 	not device_cert_valid
-}
-
-deny_reason := "ztna: AAL3 required (hardware authenticator)" if {
+} else := "ztna: AAL3 required (hardware authenticator)" if {
 	route_sensitivity in {"high", "critical"}
 	aal != "aal3"
-}
-
-deny_reason := "ztna: WebAuthn re-auth required (>1h since last assertion)" if {
+} else := "ztna: WebAuthn re-auth required (>1h since last assertion)" if {
 	route_sensitivity == "critical"
 	aal == "aal3"
 	not webauthn_fresh_1h
-}
-
-deny_reason := "ztna: BYOD cannot access critical routes" if {
+} else := "ztna: BYOD cannot access critical routes" if {
 	effective_tier == tier_byod
 	route_sensitivity == "critical"
-}
-
-deny_reason := "ztna: BREAKGLASS requires manager-approval-token" if {
+} else := "ztna: BREAKGLASS requires manager-approval-token" if {
 	effective_tier == tier_breakglass
 	not "approval" in amr_set
 }

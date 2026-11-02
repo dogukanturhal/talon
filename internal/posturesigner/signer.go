@@ -64,8 +64,8 @@ type JWSIssuer struct {
 type JWSIssuerConfig struct {
 	VaultAddr    string // e.g. "http://vault-ha.vault.svc:8200"
 	KeyName      string // Vault Transit key name (default: "posture-signer")
-	Issuer       string // iss claim (e.g. "https://posture.hexxlock.com")
-	Audience     string // aud claim (e.g. "https://internal.example.com")
+	Issuer       string // iss claim (e.g. "https://posture.example.com")
+	Audience     string // aud claim (e.g. "https://auth.internal.example.com")
 	TokenPath    string // path to Vault token file (e.g. "/vault/secrets/token")
 	JWKSCacheTTL time.Duration
 }

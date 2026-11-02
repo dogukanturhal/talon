@@ -42,7 +42,7 @@ const (
 const nonceBytesRequired = 32
 
 // iatToleranceWindow is the maximum absolute drift between agent-claimed
-// iat and server clock. ±30s matches the HexxLock Access agent's
+// iat and server clock. ±30s matches the Access Agent agent's
 // clock-sync contract (NTP ±500ms practical; 30s is generous but still
 // rejects anything that slipped through an NTP-divorced device).
 const iatToleranceWindow = 30 * time.Second
@@ -63,12 +63,12 @@ var (
 	ErrTierInvalid = errors.New("posturesigner: heartbeat tier invalid")
 )
 
-// HeartbeatRequest is the JSON body sent by the HexxLock Access agent.
+// HeartbeatRequest is the JSON body sent by the Access Agent agent.
 // The agent calls POST /v1/sign-posture with Content-Type: application/json.
 //
 // Wire notes:
 //   - device_uuid: UUIDv4 matching the SPIFFE SAN on the client TLS cert
-//     (`spiffe://hexxlock.com/device/<uuid>`). Server cross-checks these
+//     (`spiffe://example.com/device/<uuid>`). Server cross-checks these
 //     to prevent a stolen heartbeat from a different device.
 //   - nonce: 32-byte random value from the agent, base64url-encoded
 //     (RFC 4648 §5, no padding). Single-use; server rejects a re-used

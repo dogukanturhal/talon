@@ -13,7 +13,7 @@ func mustBlob(t *testing.T) *session.Blob {
 	t.Helper()
 	return &session.Blob{
 		Sub:        "u-1",
-		Email:      "user@hexxlock.test",
+		Email:      "user@example.test",
 		Groups:     []string{"viewer"},
 		TenantID:   "tenant-1",
 		SSOChainID: "chain-1",
@@ -30,7 +30,7 @@ func mustBlobWithGroups(t *testing.T, groups ...string) *session.Blob {
 
 func mustSign(t *testing.T, r *rig, blob *session.Blob) string {
 	t.Helper()
-	tok, err := r.signer.Sign(blob, "myservice.ops.hexxlock.test")
+	tok, err := r.signer.Sign(blob, "myservice.ops.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}

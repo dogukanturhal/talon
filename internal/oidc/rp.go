@@ -140,6 +140,12 @@ func New(ctx context.Context, cfg *config.Config, store *session.Store) (*RP, er
 	}, nil
 }
 
+// stepUpParams are the authorize params for step-up MFA (?mfa=1). Never
+// prompt=login: Falcon-ID treats it as "end the SSO session and clear
+// cookies", logging the user out everywhere. acr_values=mfa + max_age=0
+// make Falcon-ID run an in-place MFA challenge instead.
+var stepUpParams = map[string]string{"acr_values": "mfa", "max_age": "0"}
+
 // HandleStart responds to GET /auth/start by emitting a state cookie,
 // caching the PKCE verifier in Redis, and redirecting (HTML-scaffolded) to
 // Falcon-ID's /oauth/authorize. Query param `rd` is the original return
@@ -179,6 +185,11 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 
 	challenge := pkceChallenge(verifier)
 
+	// "Continue as <user>": OIDC login_hint from the last-user hint cookie, so
+	// Falcon-ID can prefill the identifier and offer the passkey straight away
+	// after the SSO session lapsed. Presentation-only; grants no access.
+	hint := lastUserHint(req)
+
 	// RFC 9126 PAR enforcement. When Falcon-ID advertises a pushed-
 	// authorization-request endpoint at discovery time, we MUST use it —
 	// silently falling back to inline-params /authorize on transient PAR
@@ -206,7 +217,12 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 		}
 		if req.URL.Query().Get("mfa") == "1" {
 			params.Set("acr_values", "mfa")
-			params.Set("prompt", "login")
+			for k, v := range stepUpParams {
+				params.Set(k, v)
+			}
+		}
+		if hint != "" {
+			params.Set("login_hint", hint)
 		}
 		requestURI, parErr := r.pushAuthorizationRequest(req.Context(), params)
 		if parErr != nil {
@@ -234,11 +250,82 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 	// route has mfaRequired and session lacks amr=mfa). Forces Falcon-ID
 	// to re-prompt for MFA per ADR 0001 §6.
 	if req.URL.Query().Get("mfa") == "1" {
-		opts = append(opts, oauth2.SetAuthURLParam("acr_values", "mfa"))
-		opts = append(opts, oauth2.SetAuthURLParam("prompt", "login"))
+		for k, v := range stepUpParams {
+			opts = append(opts, oauth2.SetAuthURLParam(k, v))
+		}
+	}
+	if hint != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login_hint", hint))
 	}
 	authURL := r.oauth.AuthCodeURL(state, opts...)
 	WriteHTMLRedirect(w, authURL)
+}
+
+// LastUserCookieName is the non-secret "last signed-in user" hint cookie. It
+// carries only the user's email/username (a login_hint for the next sign-in)
+// and grants no access; Talon never reads it for any authn/authz decision.
+const LastUserCookieName = "talon_last_user"
+
+const (
+	lastUserCookieTTL = 90 * 24 * time.Hour
+	maxLastUserLen    = 254
+)
+
+// validLoginHint reports whether v is safe to forward as login_hint: non-empty,
+// bounded, no control characters.
+func validLoginHint(v string) bool {
+	if v == "" || len(v) > maxLastUserLen {
+		return false
+	}
+	for _, c := range v {
+		if c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// lastUserHint returns the login_hint from the last-user cookie, or "".
+func lastUserHint(req *http.Request) string {
+	c, err := req.Cookie(LastUserCookieName)
+	if err != nil {
+		return ""
+	}
+	v, err := url.QueryUnescape(c.Value)
+	if err != nil || !validLoginHint(v) {
+		return ""
+	}
+	return v
+}
+
+func (r *RP) setLastUserCookie(w http.ResponseWriter, hint string) {
+	if !validLoginHint(hint) {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:  LastUserCookieName,
+		Value: url.QueryEscape(hint),
+		// Host-only (no Domain): only auth.ops reads it; keeps the email off every other *.example.com host.
+		Path:     "/",
+		MaxAge:   int(lastUserCookieTTL.Seconds()),
+		Expires:  time.Now().Add(lastUserCookieTTL),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (r *RP) clearLastUserCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:  LastUserCookieName,
+		Value: "",
+		// Host-only (no Domain): only auth.ops reads it; keeps the email off every other *.example.com host.
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // pushAuthorizationRequest issues an RFC 9126 §2 POST to the IdP's PAR
@@ -387,27 +474,27 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	now := time.Now().Unix()
 	blob := &session.Blob{
-		V:           session.SchemaVersion,
-		Sub:         claims.Sub,
-		Email:       claims.Email,
-		Groups:      claims.Groups,
-		Roles:       claims.Roles,
-		TenantID:    claims.TenantID,
-		Iss:         idToken.Issuer,
-		AMR:         claims.AMR,
-		ACR:         claims.ACR,
+		V:        session.SchemaVersion,
+		Sub:      claims.Sub,
+		Email:    claims.Email,
+		Groups:   claims.Groups,
+		Roles:    claims.Roles,
+		TenantID: claims.TenantID,
+		Iss:      idToken.Issuer,
+		AMR:      claims.AMR,
+		ACR:      claims.ACR,
 		// LastWebAuthnAt populated when AMR carries a hardware-factor
 		// marker. The ZTNA baseline Rego module uses this for
 		// `webauthn_fresh_1h` / `_12h` recency gates on AAL3 routes.
 		// Per Phase K self-audit H-1 (2026-06-14).
 		LastWebAuthnAt: hardwareFactorAuthTime(claims.AMR, claims.AuthTime),
-		IAT:         now,
-		Exp:         now + int64(r.cfg.SessionHardTTL.Seconds()),
-		LastTouched: now,
-		SrcIP:       ClientIP(req),
-		UAHash:      hashUA(req.UserAgent()),
-		IDTokenJTI: claims.JTI,
-		SSOChainID: hs.SSOChainID,
+		IAT:            now,
+		Exp:            now + int64(r.cfg.SessionHardTTL.Seconds()),
+		LastTouched:    now,
+		SrcIP:          ClientIP(req),
+		UAHash:         hashUA(req.UserAgent()),
+		IDTokenJTI:     claims.JTI,
+		SSOChainID:     hs.SSOChainID,
 		DeviceClaims: func() map[string]string {
 			if len(deviceClaims) == 0 {
 				return nil
@@ -445,7 +532,7 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	// reconciler's edges (talon_route#editor@group:<role>#member) are
 	// the only edges in the graph and CheckPermission returns
 	// no_permission for every login — the 2026-05-08 outage on
-	// internal.example.com.
+	// argocd.internal.example.com.
 	//
 	// Fail-open with a WARN: SpiceDB unavailability shouldn't block
 	// login because the per-request CheckPermission is the
@@ -466,6 +553,11 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.setSessionCookie(w, cookieID)
+	hint := claims.Email
+	if hint == "" {
+		hint = claims.PreferredUsername
+	}
+	r.setLastUserCookie(w, hint)
 	WriteHTMLRedirect(w, hs.ReturnTo)
 }
 
@@ -480,19 +572,19 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 // the logout indistinguishable from a tab close to an end user.
 //
 // Flow:
-//   1. Revoke Talon session in Redis (audit + tombstone).
-//   2. Clear talon_session cookie on the browser.
-//   3. HTML-redirect to ${end_session_endpoint}?post_logout_redirect_uri=
-//      ${LogoutRedirectURL}&id_token_hint=${id_token_jti}
-//      Falcon-ID clears its IDP session cookie + redirects back to
-//      Talon's /auth/logged-out (must be in the OAuth client's
-//      registered post_logout_redirect_uris list — see
-//      ServiceClientClaim.spec.postLogoutRedirectURIs).
-//   4. If the IdP didn't advertise end_session_endpoint (older OIDC
-//      providers, mock IdPs in tests), fall back to local-only logout.
+//  1. Revoke Talon session in Redis (audit + tombstone).
+//  2. Clear talon_session cookie on the browser.
+//  3. HTML-redirect to ${end_session_endpoint}?post_logout_redirect_uri=
+//     ${LogoutRedirectURL}&id_token_hint=${id_token_jti}
+//     Falcon-ID clears its IDP session cookie + redirects back to
+//     Talon's /auth/logged-out (must be in the OAuth client's
+//     registered post_logout_redirect_uris list — see
+//     ServiceClientClaim.spec.postLogoutRedirectURIs).
+//  4. If the IdP didn't advertise end_session_endpoint (older OIDC
+//     providers, mock IdPs in tests), fall back to local-only logout.
 //
 // Talon's session is killed both by this flow and, when the user signs
-// out at another HexxLock RP (accounts.hexxlock.com), by the OIDC
+// out at another HexxLock RP (accounts.example.com), by the OIDC
 // Back-Channel Logout 1.0 receiver at POST /auth/backchannel-logout
 // (handlers/backchannel_logout.go). The receiver scopes the cascade to
 // `sub` because Talon does not currently capture the OP's `sid` into
@@ -506,7 +598,7 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 // every subsequent request to those apps so the lingering cookies are
 // harmless on the cascade hot path, but defense-in-depth via per-app
 // /logout chaining is tracked as gap SLO-02 in
-// <gitops-bootstrap-repo>/docs/audits/2026-Q2-tier1-iam-iap-audit.md.
+// the internal Q2 2026 IAM/IAP audit.
 func (r *RP) HandleLogout(w http.ResponseWriter, req *http.Request) {
 	logger := tlog.From(req.Context())
 	cookie, _ := req.Cookie(SessionCookieName)
@@ -520,6 +612,8 @@ func (r *RP) HandleLogout(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	r.clearSessionCookie(w)
+	// Explicit sign-out: forget the user hint too (shared machines).
+	r.clearLastUserCookie(w)
 
 	// RP-Initiated Logout: bounce to IdP so Falcon-ID also clears its
 	// SSO cookie. If the IdP didn't advertise end_session_endpoint,
@@ -578,10 +672,10 @@ func (r *RP) clearSessionCookie(w http.ResponseWriter) {
 //
 // The allowed-zone list is the union of cfg.ProtectedHostSuffixes
 // (TALON_PROTECTED_HOST_SUFFIXES env, comma-separated, e.g.
-// "internal.example.com,.apps.hexxlock.com") and cfg.ClientlessHostSuffixes
-// (TALON_CLIENTLESS_HOST_SUFFIXES, ADR 0044, e.g. ".access.hexxlock.com").
+// ".internal.example.com,.apps.example.com") and cfg.ClientlessHostSuffixes
+// (TALON_CLIENTLESS_HOST_SUFFIXES, ADR 0044, e.g. ".access.example.com").
 // The access zone MUST be accepted here, otherwise the OIDC redirect back
-// to `<app>.access.hexxlock.com` after sign-in would be rejected as an
+// to `<app>.access.example.com` after sign-in would be rejected as an
 // open-redirect and the clientless auth flow could never complete.
 //
 // Each entry MUST start with a dot — guards against suffix-collision
@@ -614,12 +708,14 @@ func (r *RP) isSafeReturnURL(rd string) bool {
 // claimsBody is the subset of id_token claims Talon consumes; matches the
 // shape Falcon-ID emits (per internal engineering notes).
 type claimsBody struct {
-	Sub      string   `json:"sub"`
-	Email    string   `json:"email"`
-	Groups   []string `json:"groups"`
-	Roles    []string `json:"roles"`
-	TenantID string   `json:"tenant_id"`
-	AMR      []string `json:"amr"`
+	Sub   string `json:"sub"`
+	Email string `json:"email"`
+	// PreferredUsername — OIDC Core §5.1; fallback login_hint when no email.
+	PreferredUsername string   `json:"preferred_username,omitempty"`
+	Groups            []string `json:"groups"`
+	Roles             []string `json:"roles"`
+	TenantID          string   `json:"tenant_id"`
+	AMR               []string `json:"amr"`
 	// ACR — Authentication Context Class Reference (OIDC Core §2,
 	// RFC 8176 §1). Falcon-ID emits the AAL ladder values
 	// `urn:hexxlock:aal2` / `urn:hexxlock:aal3` per its
@@ -627,15 +723,15 @@ type claimsBody struct {
 	// `acr` over `amr` for gate decisions because it's a stable
 	// business-rule reference rather than a brittle method list. Talon's
 	// step-up gate uses this when the route configures RequireACR.
-	ACR      string   `json:"acr,omitempty"`
+	ACR string `json:"acr,omitempty"`
 	// AuthTime — unix seconds when the user authenticated at the OP, per
 	// OIDC Core §2 (id_token reserved claim). Talon mirrors this into
 	// session.Blob.LastWebAuthnAt when AMR contains a hardware-factor
 	// marker, so the ZTNA baseline Rego can gate critical-route AAL3
 	// step-up on `amr_recency_seconds <= 3600`. Per Phase K self-audit
 	// H-1 (2026-06-14).
-	AuthTime int64    `json:"auth_time,omitempty"`
-	JTI      string   `json:"jti"`
+	AuthTime int64  `json:"auth_time,omitempty"`
+	JTI      string `json:"jti"`
 	// SID — OIDC Session Management 1.0 §5 / Front-Channel Logout 1.0 §3.
 	// The OP's session identifier; included in the iframe URL on RP-
 	// initiated logout so we can scope cascade-revocation to a single

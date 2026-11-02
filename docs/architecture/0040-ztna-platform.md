@@ -3,10 +3,10 @@
 **Status:** Accepted (Phase 0 Foundation, 2026-06-06)
 **Supersedes:** none (extends 0006, 0009, 0010, 0011)
 **Related siblings (to be written):**
-- `jess/docs/architecture/0001-device-cert-profile.md` — device attestation + cert lifecycle
-- `jess/docs/architecture/0002-ssh-broker.md` — Vault SSH-CA + Talon ext_authz integration
-- `falcon-id/docs/architecture/0009-caep-outbox.md` — at-least-once SET delivery
-- `falcon-id/docs/architecture/0010-posture-heartbeat.md` — agent → IdP posture refresh
+- Jess device-cert profile (separate repository) — device attestation + cert lifecycle
+- Jess SSH broker (separate repository) — Vault SSH-CA + Talon ext_authz integration
+- Falcon-ID CAEP outbox (separate repository) — at-least-once SET delivery
+- Falcon-ID posture heartbeat (separate repository) — agent → IdP posture refresh
 
 ## Context
 
@@ -37,7 +37,7 @@ control without device assurance.
 This ADR locks the 10-phase program to close that gap to **tier-1**
 (NIST SP 800-207 + BeyondCorp + Cloudflare Zero Trust + Pomerium
 reference-arch aligned), implemented across Talon, Falcon-ID, Jess,
-and a new `HexxLock Access` desktop client.
+and a new `Access Agent` desktop client.
 
 ## Decision
 
@@ -46,7 +46,7 @@ and a new `HexxLock Access` desktop client.
 ```
 External client (any device, any network)
    │
-   ├── HexxLock Access desktop client (Tauri, Rust)
+   ├── Access Agent desktop client (Tauri, Rust)
    │     • WebAuthn enrollment + repeat-auth
    │     • Device-cert presentation
    │     • Posture agent (5-min cadence)
@@ -64,7 +64,7 @@ External client (any device, any network)
    │  Traefik internal (admin-tier)  ─── direct  ──► Talon        │
    │                                                              │
    │  Talon PDP/PEP:                                              │
-   │    • OIDC RP (federated to Falcon-ID id.hexxlock.com)        │
+   │    • OIDC RP (federated to Falcon-ID id.example.com)        │
    │    • DPoP proof-of-possession verifier (RFC 9449)            │
    │    • Device-cert mTLS at Envoy listener (Phase 3d)           │
    │    • Posture JWT verifier (X-Talon-Posture, Phase 4)         │
@@ -98,10 +98,10 @@ External client (any device, any network)
 | # | Decision | Choice | Rationale |
 |---|----------|--------|-----------|
 | 1 | **TPM strategy** | Multi-OS: Windows 11 TPM 2.0 + Linux TPM 2.0 + Android StrongBox/TEE + Apple **App Attest only (not device identity)** | Tier-1 BeyondCorp coverage. macOS desktop has no public Secure Enclave key-attestation chain — Apple does not publish a server-verifiable attestation over `kSecAttrTokenIDSecureEnclave` keys (Apple Developer Forums; Approov 2024; Guardsquare). Plan: macOS uses **MDM-issued device cert + App Attest** as a layered proxy; honest documentation gap, mitigated. |
-| 2 | **Device-cert lifetime** | 24h, auto-rotated by HexxLock Access client at 12h (50% of TTL) | Minimises blast radius on compromise. Aligns with `jess-ca` operator-cert TTL pattern (8h for human-driven access, 24h for endpoint identity). Industry consensus on 24h corp-managed (NIST SP 800-207 §3.4.1). |
+| 2 | **Device-cert lifetime** | 24h, auto-rotated by Access Agent client at 12h (50% of TTL) | Minimises blast radius on compromise. Aligns with `jess-ca` operator-cert TTL pattern (8h for human-driven access, 24h for endpoint identity). Industry consensus on 24h corp-managed (NIST SP 800-207 §3.4.1). |
 | 3 | **Posture cadence** | 5 minutes (corporate-managed) / 15 minutes (BYOD) | 5 min matches BeyondCorp continuous-verification spirit; 15 min matches Zscaler ZPA production cadence (Zscaler Help docs 2025). Cadence configurable per device tier. |
 | 4 | **Client UX framework** | **Tauri** (Rust + WebView) | Aligns with Jess's Rust codebase + IronRDP broker stack. Smaller binary than Electron (~10MB vs ~150MB), native OS integration, signed-release-channel built-in. Electron's heavier runtime is not justified given we control the entire client stack. |
-| 5 | **Trust-domain naming** | SPIFFE-aligned naming on all new identities (`spiffe://hexxlock.com/<purpose>/<id>`); Linkerd's cluster-internal SPIFFE retained; **no full SPIRE server deployment in Phase 0-2** | Linkerd already provides SPIFFE inside the cluster. Adopting SPIFFE-ID conventions in cert SANs preserves the future multi-cluster federation option without paying SPIRE's operational cost today. Concrete: device cert SAN = `spiffe://hexxlock.com/device/<device-uuid>`. svctoken `sub` claim → SPIFFE-aligned URI. |
+| 5 | **Trust-domain naming** | SPIFFE-aligned naming on all new identities (`spiffe://example.com/<purpose>/<id>`); Linkerd's cluster-internal SPIFFE retained; **no full SPIRE server deployment in Phase 0-2** | Linkerd already provides SPIFFE inside the cluster. Adopting SPIFFE-ID conventions in cert SANs preserves the future multi-cluster federation option without paying SPIRE's operational cost today. Concrete: device cert SAN = `spiffe://example.com/device/<device-uuid>`. svctoken `sub` claim → SPIFFE-aligned URI. |
 
 ### Trust tiers
 
@@ -119,10 +119,10 @@ External client (any device, any network)
 | 1 — kubectl broker | <gitops-bootstrap-repo> + falcon-id | After 0 | Yes |
 | 2 — Jess SSH broker | jess + talon | After 0 | Yes (parallel to 1, 3, 6) |
 | 3 — Jess device-cert profile | jess + talon | After 0 | Blocks 4 |
-| 4 — Device posture agent | hexxlock-access (new repo) | After 3 | Blocks 5 |
+| 4 — Device posture agent | access-agent (new repo) | After 3 | Blocks 5 |
 | 5 — Posture-gated Rego | talon | After 4 | Blocks 7 |
 | 6 — CAEP outbox + drainer | falcon-id + talon | After 0 | Yes (parallel to 1, 2, 3, 4) |
-| 7 — HexxLock Access client | hexxlock-access | After 5, 6 | n/a |
+| 7 — Access Agent client | access-agent | After 5, 6 | n/a |
 | 8 — Audit + compliance | talon + falcon-id + jess | After 5 | Yes (parallel to 7) |
 | 9 — DR + chaos | all | After 7, 8 | n/a |
 | 10 — Soft launch + training | platform-tools (docs) + dashboards | Last | n/a |
@@ -188,7 +188,7 @@ BeyondCorp Enterprise patterns covered:
 
 ### Negative
 
-- ~6 months engineering effort across the three repos + a new `hexxlock-access` client repo
+- ~6 months engineering effort across the three repos + a new `access-agent` client repo
 - macOS desktop device-identity is the platform's weakest link; partially mitigated by MDM-cert layering but not closed
 - TPM Rust library landscape requires FFI to `tpm2-tss` (no Rust peer of `go-attestation`)
 - Android key-attestation parser: no maintained Rust crate; port Google's Java reference using `rasn`/`der-parser`

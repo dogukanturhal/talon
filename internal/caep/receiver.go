@@ -62,12 +62,12 @@ type JWKSResolver interface {
 // ReceiverConfig is the wiring + tunables.
 type ReceiverConfig struct {
 	// ExpectedIssuer is the iss the SET must carry. For HexxLock this
-	// is "https://id.hexxlock.com" (Falcon-ID).
+	// is "https://id.example.com" (Falcon-ID).
 	ExpectedIssuer string
 
 	// ExpectedAudience is the receiver's URL. CAEP §4.2 requires the
 	// aud claim to include the receiver; typically
-	// "https://internal.example.com/caep/events".
+	// "https://auth.internal.example.com/caep/events".
 	ExpectedAudience string
 
 	// AllowedAlgs constrains the SET signing algorithm. Defaults to

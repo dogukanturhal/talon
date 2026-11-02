@@ -1,0 +1,48 @@
+{{- if and .Values.config.deviceMtls.trustedClientId .Values.config.deviceMtls.listenPort }}
+{{- /* Linkerd policy for the plaintext device-mTLS edge port ONLY. The Server
+       selects just the named port http-edge-mtls, so only that port becomes
+       default-deny; :8443 / metrics / extauthz keep their current behaviour.
+       Only the Envoy gateway identity may connect, so l5d-client-id (set by the
+       Linkerd inbound proxy from the peer's mTLS identity) is trustworthy. */}}
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: {{ include "talon.fullname" . }}-edge-mtls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  port: http-edge-mtls
+  podSelector:
+    matchLabels:
+      {{- include "talon.selectorLabels" . | nindent 6 }}
+  proxyProtocol: HTTP/1
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ include "talon.fullname" . }}-edge-mtls-envoy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  identities:
+    - {{ .Values.config.deviceMtls.trustedClientId | quote }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "talon.fullname" . }}-edge-mtls-allow-envoy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "talon.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: {{ include "talon.fullname" . }}-edge-mtls
+  requiredAuthenticationRefs:
+    - group: policy.linkerd.io
+      kind: MeshTLSAuthentication
+      name: {{ include "talon.fullname" . }}-edge-mtls-envoy
+{{- end }}

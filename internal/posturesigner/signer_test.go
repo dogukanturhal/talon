@@ -117,8 +117,8 @@ func newIssuerForTest(t *testing.T, tv *testVaultTransit) *JWSIssuer {
 	iss, err := NewJWSIssuer(JWSIssuerConfig{
 		VaultAddr: tv.srv.URL,
 		KeyName:   "posture-signer",
-		Issuer:    "https://posture.hexxlock.com",
-		Audience:  "https://internal.example.com",
+		Issuer:    "https://posture.example.com",
+		Audience:  "https://auth.internal.example.com",
 		TokenPath: "/vault/secrets/token",
 	})
 	if err != nil {
@@ -169,8 +169,8 @@ func TestJWSIssuer_RoundTrip_PostureVerifier(t *testing.T) {
 	// trusted JWKS. We wrap the RSA public key in a JWKSResolver.
 	resolver := &staticKeyResolver{key: &tv.key.PublicKey}
 	verifier, err := posture.NewVerifier(posture.VerifierConfig{
-		TrustedIssuers:   []string{"https://posture.hexxlock.com"},
-		ExpectedAudience: "https://internal.example.com",
+		TrustedIssuers:   []string{"https://posture.example.com"},
+		ExpectedAudience: "https://auth.internal.example.com",
 		AllowedAlgs:      []jose.SignatureAlgorithm{jose.RS256},
 		Resolver:         resolver,
 	})
@@ -191,8 +191,8 @@ func TestJWSIssuer_RoundTrip_PostureVerifier(t *testing.T) {
 	if claims.UserSub != req.UserSub {
 		t.Errorf("user_sub: want %q, got %q", req.UserSub, claims.UserSub)
 	}
-	if claims.Issuer != "https://posture.hexxlock.com" {
-		t.Errorf("iss: want https://posture.hexxlock.com, got %q", claims.Issuer)
+	if claims.Issuer != "https://posture.example.com" {
+		t.Errorf("iss: want https://posture.example.com, got %q", claims.Issuer)
 	}
 	if diskEnc, ok := claims.Compliance["disk_encrypted"].(bool); !ok || !diskEnc {
 		t.Errorf("compliance.disk_encrypted: want true bool, got %v (%T)",
@@ -237,7 +237,7 @@ func TestJWSIssuer_VaultSignError(t *testing.T) {
 
 	iss, _ := NewJWSIssuer(JWSIssuerConfig{
 		VaultAddr: errSrv.URL, KeyName: "posture-signer",
-		Issuer: "https://posture.hexxlock.com", Audience: "https://internal.example.com",
+		Issuer: "https://posture.example.com", Audience: "https://auth.internal.example.com",
 		TokenPath: "/vault/secrets/token",
 	})
 	iss.httpCl = errSrv.Client()
@@ -331,9 +331,9 @@ func TestJWSIssuer_SignSET(t *testing.T) {
 	// caep package's unexported audienceField), then sign it with the
 	// Vault-Transit-backed issuer. iss implements caep.Signer.
 	tx, err := caep.NewTransmitter(caep.TransmitterConfig{
-		SetIssuer:     "https://posture.hexxlock.com",
-		SubjectIssuer: "https://id.hexxlock.com",
-		Audience:      "https://internal.example.com",
+		SetIssuer:     "https://posture.example.com",
+		SubjectIssuer: "https://id.example.com",
+		Audience:      "https://auth.internal.example.com",
 		ReceiverURL:   "https://example.invalid/caep/events",
 	}, iss)
 	if err != nil {
@@ -389,8 +389,8 @@ func TestJWSIssuer_SignSET(t *testing.T) {
 	if rt.JTI == "" {
 		t.Error("payload missing jti")
 	}
-	if rt.Iss != "https://posture.hexxlock.com" {
-		t.Errorf("iss: want https://posture.hexxlock.com, got %q", rt.Iss)
+	if rt.Iss != "https://posture.example.com" {
+		t.Errorf("iss: want https://posture.example.com, got %q", rt.Iss)
 	}
 	if _, ok := rt.Events[caep.EventDeviceComplianceChange]; !ok {
 		t.Errorf("payload missing device-compliance-change event: %v", rt.Events)

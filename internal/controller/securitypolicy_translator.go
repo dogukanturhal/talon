@@ -40,8 +40,8 @@
 //     (K8s rejects OwnerReferences across namespaces). We use labels
 //     instead:
 //
-//       talon.hexxlock.com/owner-namespace: <talonroute ns>
-//       talon.hexxlock.com/owner-name:      <talonroute name>
+//       talon.example.com/owner-namespace: <talonroute ns>
+//       talon.example.com/owner-name:      <talonroute name>
 //       app.kubernetes.io/managed-by:       talon-controller
 //
 //     A finalizer on the TalonRoute drives synchronous cleanup of the
@@ -54,7 +54,7 @@
 //
 //   - Each reconcile re-applies the desired SecurityPolicy spec via
 //     server-side apply (SSA) with field-manager
-//     `talon.hexxlock.com/securitypolicy-translator`. An operator
+//     `talon.example.com/securitypolicy-translator`. An operator
 //     hand-edit on a Talon-managed field surfaces as an SSA conflict
 //     on the next reconcile and the controller re-asserts.
 //
@@ -134,9 +134,9 @@ type SecurityPolicyTranslatorConfig struct {
 // sweeper keys on these.
 const (
 	LabelManagedBy      = "app.kubernetes.io/managed-by"
-	LabelOwnerNamespace = "talon.hexxlock.com/owner-namespace"
-	LabelOwnerName      = "talon.hexxlock.com/owner-name"
-	LabelOwnerHost      = "talon.hexxlock.com/owner-host"
+	LabelOwnerNamespace = "talon.example.com/owner-namespace"
+	LabelOwnerName      = "talon.example.com/owner-name"
+	LabelOwnerHost      = "talon.example.com/owner-host"
 
 	ManagedByValue = "talon-controller"
 
@@ -144,7 +144,7 @@ const (
 	// managed field surfaces as an SSA conflict; hand-edits on fields
 	// the translator does NOT manage are preserved via SSA's per-field
 	// ownership model.
-	FieldManager = "talon.hexxlock.com/securitypolicy-translator"
+	FieldManager = "talon.example.com/securitypolicy-translator"
 )
 
 // FinalizerName is the finalizer Talon attaches to TalonRoutes when
@@ -152,7 +152,7 @@ const (
 // must remove the matching SecurityPolicy before clearing this
 // finalizer (otherwise EG keeps the ext_authz wire alive after the
 // TalonRoute is gone — silent half-deletion).
-const FinalizerName = "talon.hexxlock.com/securitypolicy-finalizer"
+const FinalizerName = "talon.example.com/securitypolicy-finalizer"
 
 // DesiredSecurityPolicy builds the unstructured object for the given
 // TalonRoute. Exposed for unit testing — the actual Ensure/Delete
@@ -163,7 +163,7 @@ const FinalizerName = "talon.hexxlock.com/securitypolicy-finalizer"
 // (one HTTPRoute per host is the EG convention from Phase 7.4
 // migration). Operators with a different naming convention can
 // override via route.Spec.Annotations
-// `talon.hexxlock.com/httproute-name` — preserved for forward
+// `talon.example.com/httproute-name` — preserved for forward
 // compatibility but not yet wired.
 func DesiredSecurityPolicy(route *gatewayv1alpha1.TalonRoute, cfg SecurityPolicyTranslatorConfig) *unstructured.Unstructured {
 	sp := &unstructured.Unstructured{}
@@ -221,13 +221,13 @@ func SecurityPolicyName(route *gatewayv1alpha1.TalonRoute) string {
 
 // HTTPRouteNameForHost returns the conventional HTTPRoute name for a
 // given host. The Phase-7.4 EG migration named HTTPRoutes after their
-// hosts with a trailing `-prod` (e.g. `mearax-prod`, `id-hexxlock-prod`).
+// hosts with a trailing `-prod` (e.g. `app-prod`, `idp-example-prod`).
 // Future TalonRoute API additions may expose
 // `spec.gateway.httpRouteName` to override this convention.
 func HTTPRouteNameForHost(host string) string {
 	// Strip wildcard + dots + return host with -prod suffix.
-	// "mearax.hexxlock.com" → "mearax-prod"
-	// "id.hexxlock.com" → "id-hexxlock-prod"  (no, that's not right)
+	// "app.example.com" → "app-prod"
+	// "idp.example.com" → "idp-example-prod"  (no, that's not right)
 	// Actually Phase 7.4 used hostname-derived names; for now we use
 	// the host directly with dots → dashes + -prod suffix as the
 	// default convention. Operators with non-standard naming can

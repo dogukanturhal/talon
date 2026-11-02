@@ -34,7 +34,7 @@ inside the ZTNA program. Each entry follows the same shape:
 
 ## D-002 — Device-cert lifetime: 24 hours
 
-- **Decision**: All device certs minted by Jess have a 24-hour TTL. HexxLock Access client auto-renews at 12 hours (50% of TTL).
+- **Decision**: All device certs minted by Jess have a 24-hour TTL. Access Agent client auto-renews at 12 hours (50% of TTL).
 - **Date**: 2026-06-06
 - **Phase**: 0
 - **Rationale**: Minimises blast radius on compromise. Matches NIST SP 800-207 §3.4.1 corp-managed device guidance. Operator-cert (Jess `/operator-cert`) is 8h for human-driven access; device-cert at 24h reflects machine-driven background renewal.
@@ -55,12 +55,12 @@ inside the ZTNA program. Each entry follows the same shape:
   - Single cadence (simpler, less optimal for BYOD battery life)
   - 1 min (too aggressive, posture probe overhead noticeable)
 - **Reversal cost**: Low — agent config, no protocol change
-- **Owner**: hexxlock-access (agent) + falcon-id (heartbeat endpoint)
+- **Owner**: access-agent (agent) + falcon-id (heartbeat endpoint)
 - **Cross-refs**: ADR 0040 §Decision row 3; Zscaler Help docs 2025
 
 ## D-004 — Client UX framework: Tauri
 
-- **Decision**: HexxLock Access desktop client built on Tauri (Rust + WebView) for Win/macOS/Linux.
+- **Decision**: Access Agent desktop client built on Tauri (Rust + WebView) for Win/macOS/Linux.
 - **Date**: 2026-06-06
 - **Phase**: 0
 - **Rationale**: Aligns with Jess's Rust codebase + IronRDP. Tauri binary ~10MB vs Electron ~150MB. Native OS integration. Signed-release-channel built-in.
@@ -69,15 +69,15 @@ inside the ZTNA program. Each entry follows the same shape:
   - Native per-OS (Swift on macOS, C#/.NET on Win, GTK on Linux) — 3x maintenance burden
   - WebExtension only (cannot do device-cert mTLS or SE key access)
 - **Reversal cost**: Very high — would mean rewriting the client
-- **Owner**: hexxlock-access repo (new)
+- **Owner**: access-agent repo (new)
 - **Cross-refs**: ADR 0040 §Decision row 4
 
 ## D-005 — Trust-domain naming: SPIFFE-aligned, no SPIRE deployment
 
-- **Decision**: All new identities use SPIFFE-ID naming (`spiffe://hexxlock.com/<purpose>/<id>`). Linkerd's cluster-internal SPIFFE retained. **Do not deploy SPIRE server** in Phase 0–2.
+- **Decision**: All new identities use SPIFFE-ID naming (`spiffe://example.com/<purpose>/<id>`). Linkerd's cluster-internal SPIFFE retained. **Do not deploy SPIRE server** in Phase 0–2.
 - **Date**: 2026-06-06
 - **Phase**: 0
-- **Rationale**: Linkerd already provides cluster-internal SPIFFE. SPIFFE naming preserves future multi-cluster federation without paying SPIRE's operational cost today. Concrete naming: device cert SAN = `spiffe://hexxlock.com/device/<device-uuid>`; svctoken `sub` URL form.
+- **Rationale**: Linkerd already provides cluster-internal SPIFFE. SPIFFE naming preserves future multi-cluster federation without paying SPIRE's operational cost today. Concrete naming: device cert SAN = `spiffe://example.com/device/<device-uuid>`; svctoken `sub` URL form.
 - **Alternatives considered**:
   - Full SPIRE deployment now (premature; no multi-cluster requirement)
   - Stick with current `talon:svctoken:*` URN scheme (closes future-federation door)

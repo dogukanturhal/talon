@@ -25,7 +25,7 @@
 // canonical CRD-versioning rule (operators authoring v1beta1
 // shouldn't expect data preservation through v1alpha1).
 //
-// +groupName=gateway.talon.hexxlock.com
+// +groupName=gateway.talon.example.com
 package v1beta1
 
 import (
@@ -295,7 +295,7 @@ type PathRule struct {
 // TalonRouteSpec is the operator-authored desired state.
 type TalonRouteSpec struct {
 	// Host is the public host the IngressRoute matches on
-	// (e.g. internal.example.com).
+	// (e.g. prometheus.internal.example.com).
 	Host string `json:"host"`
 
 	// Upstream is the in-cluster target.

@@ -72,7 +72,7 @@ import (
 )
 
 // DefaultIssuer is Falcon-ID. Overridable for dev tenants.
-const DefaultIssuer = "https://id.hexxlock.com"
+const DefaultIssuer = "https://id.example.com"
 
 // DefaultClientID is the platform's first-party public client. It holds
 // NO secret — that is the point of a native app — so shipping the
@@ -96,7 +96,7 @@ var baseScopes = []string{"openid", "profile", "email", "groups", "roles", "offl
 
 // DefaultHosts are the Talon-fronted hosts a login grants access to when
 // the caller does not name any.
-var DefaultHosts = []string{"internal.example.com"}
+var DefaultHosts = []string{"npm.internal.example.com"}
 
 // scopesForLogin returns the full scope set to request at AUTHORIZE time.
 //

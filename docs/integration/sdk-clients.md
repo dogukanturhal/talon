@@ -4,20 +4,20 @@
 > **Audience:** developers integrating a customer-tier SPA (using
 > `@hexxlock/falcon-id-client`) with Talon's forward-auth path.
 
-The 17 admin hosts behind Talon (`internal.example.com`) are direct OIDC
+The 17 admin hosts behind Talon (`*.internal.example.com`) are direct OIDC
 RPs — they don't use the SDK. This document covers the **other**
-case: customer-tier apps (`accounts.hexxlock.com`, ExampleSuite, etc.)
+case: customer-tier apps (`accounts.example.com`, ExampleSuite, etc.)
 that use the falcon-id-client SDK and may opt into Talon's
 forward-auth gateway (Gap 7) for an admin sub-route.
 
 ## 1. Decision flow — do you need this guide?
 
 ```
-Are you building an admin tier internal.example.com host?
-├── Yes → use the standard TalonRoute CRD pattern. See ADR 0003 +
-│         docs/operations/migrate-host.md. SDK not involved.
+Are you building an admin tier *.internal.example.com host?
+├── Yes → use the standard TalonRoute CRD pattern. See ADR 0003.
+│         SDK not involved.
 │
-└── No, customer tier (*.hexxlock.com)
+└── No, customer tier (*.example.com)
     │
     ├── Customer-tier with SDK (accounts, ExampleSuite) — single OIDC RP
     │   per app, BFF-managed cookies → continue this doc.
@@ -33,18 +33,18 @@ Are you building an admin tier internal.example.com host?
 > Talon ownership for SDK-fronted apps:
 >
 > - **SDK owns**: client-side session marker cookie
->   (`hexxlock_access_token`), client-side state, BroadcastChannel
+>   (`app_access_token`), client-side state, BroadcastChannel
 >   cross-tab sync, refresh-token rotation through the BFF.
 > - **BFF (per-app) owns**: httpOnly OIDC cookies
->   (`hexxlock_access_token`, `hexxlock_refresh_token`,
+>   (`app_access_token`, `app_refresh_token`,
 >   `hexxlock_id_token`), `/api/v1/auth/login`, `/api/v1/auth/logout`,
 >   `/api/v1/auth/refresh`, `/api/v1/auth/me`.
 > - **Talon owns** (only when the app is fronted by Talon's forward-auth
->   gateway, e.g. `accounts.hexxlock.com/admin`):
->   `talon_session_customer` cookie on `Domain=.hexxlock.com`,
+>   gateway, e.g. `accounts.example.com/admin`):
+>   `talon_session_customer` cookie on `Domain=.example.com`,
 >   `/auth/verify`, identity-header injection.
 > - **Falcon-ID owns**: `falcon_idp_session` cookie on
->   `Domain=.hexxlock.com` (memory:
+>   `Domain=.example.com` (memory:
 >   internal engineering notes).
 
 ## 3. Logout chain (Gap 8 fix)
@@ -56,10 +56,10 @@ Are you building an admin tier internal.example.com host?
 > 2. SDK reads logout_url from BFF response (was: read accountsLogoutUrl).
 > 3. SDK calls window.location.replace(logout_url) FIRST,
 >    BEFORE setStatus('unauthenticated').
-> 4. Browser navigates to id.hexxlock.com/oauth/logout?…
+> 4. Browser navigates to id.example.com/oauth/logout?…
 > 5. Falcon-ID clears falcon_idp_session cookie.
 > 6. Falcon-ID redirects to post_logout_redirect_uri
->    (=accounts.hexxlock.com/).
+>    (=accounts.example.com/).
 > 7. Talon's session cookie (if any) shadow-clears via
 >    next-request 401 path (no session in Redis →
 >    OIDC handshake → since falcon_idp_session is gone,
@@ -90,14 +90,14 @@ Are you building an admin tier internal.example.com host?
 > from APISIX → Talon → app. The SDK can use these for SSR
 > hydration without re-fetching the session.
 
-## 5. Forward-auth pilot host: accounts.hexxlock.com/admin
+## 5. Forward-auth pilot host: accounts.example.com/admin
 
 > **TODO** — the pilot configuration:
 >
-> - APISIX route: matches `Host: accounts.hexxlock.com` + `Path:
+> - APISIX route: matches `Host: accounts.example.com` + `Path:
 >   /admin/*`.
 > - APISIX `forward-auth` plugin: `uri:
->   https://auth.hexxlock.com/auth/verify`,
+>   https://auth.example.com/auth/verify`,
 >   `request_method: GET`, `keepalive: true`, `timeout: 1000`.
 > - On 200: APISIX adds `X-Talon-*` headers per ADR 0005.
 > - On 401: APISIX redirects to Falcon-ID login (or returns 401 to the

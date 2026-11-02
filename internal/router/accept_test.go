@@ -113,7 +113,7 @@ func TestStartAuthWithMFA_AcceptAware(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/ui/sw.js", nil)
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Dest", "script")
-	req.Host = "internal.example.com"
+	req.Host = "vault.internal.example.com"
 
 	rec := httptest.NewRecorder()
 	// startAuthWithMFA's XHR branch returns BEFORE touching r.cfg, so
