@@ -6,7 +6,7 @@ require (
 	github.com/authzed/authzed-go v1.8.0
 	github.com/authzed/grpcutil v0.0.0-20260105210157-e237581949c2
 	github.com/coreos/go-oidc/v3 v3.11.0
-	github.com/envoyproxy/go-control-plane/envoy v1.37.0
+	github.com/envoyproxy/go-control-plane/envoy v1.39.1-0.20260819172001-e6e3fd93e4be
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/google/uuid v1.6.0
 	github.com/jung-kurt/gofpdf v1.16.2
@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/oauth2 v0.36.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.85.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.35.0
 	sigs.k8s.io/controller-runtime v0.23.3
@@ -52,7 +52,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -107,7 +107,7 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260904194346-d0f1323225a4
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
