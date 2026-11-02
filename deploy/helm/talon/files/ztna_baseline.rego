@@ -187,6 +187,11 @@ network_class := nc if {
 # ------------------------------------------------------------------ #
 
 route_sensitivity := s if {
+	s := input.route.sensitivity
+	s != ""
+} else := s if {
+	# Legacy location (talon < route-input): kept so either talon version
+	# works during rollout.
 	s := input.posture.compliance.route_sensitivity
 } else := "medium"
 

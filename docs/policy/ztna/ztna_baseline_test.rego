@@ -265,3 +265,24 @@ test_stale_posture_deny_reason if {
 	}
 	contains(r, "posture stale")
 }
+
+# route.sensitivity is the canonical location; the legacy
+# posture.compliance.route_sensitivity is only a fallback.
+test_route_sensitivity_from_input_route if {
+	route_sensitivity == "critical" with input as {"route": {"sensitivity": "critical"}}
+}
+
+test_route_sensitivity_legacy_fallback if {
+	route_sensitivity == "high" with input as {"posture": {"compliance": {"route_sensitivity": "high"}}}
+}
+
+test_route_sensitivity_route_wins_over_legacy if {
+	route_sensitivity == "critical" with input as {
+		"route": {"sensitivity": "critical"},
+		"posture": {"compliance": {"route_sensitivity": "low"}},
+	}
+}
+
+test_route_sensitivity_default_medium if {
+	route_sensitivity == "medium" with input as {}
+}

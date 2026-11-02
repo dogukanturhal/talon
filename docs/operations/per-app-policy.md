@@ -205,8 +205,7 @@ kubectl get talonroute -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.
   session expiry is a Talon-internal Redis-state TTL.
 - **Do not** flip a route from `auditOnly: true` to enforce without
   reading the soak-window audit grep. Tier-1 discipline is real-traffic
-  data before the gate flip — see the same lesson in
-  internal engineering notes.
+  data before the gate flip.
 
 ## Related
 

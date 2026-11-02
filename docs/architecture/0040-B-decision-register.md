@@ -15,7 +15,7 @@ inside the ZTNA program. Each entry follows the same shape:
 - **Alternatives** — what was considered
 - **Reversal cost** — how hard would it be to change later
 - **Owner** — repo / role responsible
-- **Cross-refs** — ADR / memory / commit pointers
+- **Cross-refs** — ADR / commit pointers
 
 ---
 

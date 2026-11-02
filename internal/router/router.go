@@ -703,7 +703,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// Linkerd MTA + AuthorizationPolicy at the platform layer
 			// add defense-in-depth. Auth-host-scoped to avoid colliding
 			// with downstream RPs that ship their own /auth/* handlers
-			// (memory internal engineering notes).
 			if r.backchannelLogout != nil {
 				r.backchannelLogout.ServeHTTP(w, req)
 				return
@@ -1180,6 +1179,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				amrRecencySec = 0
 			}
 		}
+
 		regoIn := &policy.RegoInput{
 			User: policy.RegoInputUser{
 				Sub: blob.Sub, Email: blob.Email,
@@ -1189,6 +1189,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			},
 			Route: policy.RegoInputRoute{
 				Host: req.Host, Permission: up.permission,
+				Sensitivity: up.sensitivity,
 			},
 			Request: policy.RegoInputRequest{
 				Method: req.Method, Path: req.URL.Path,
@@ -1345,14 +1346,52 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// route-sensitivity hint overlays the verified posture compliance
 		// map (the route operator owns sensitivity classification, not
 		// the posture-signer).
-		if up.sensitivity != "" {
-			if regoIn.Posture == nil {
-				regoIn.Posture = &policy.RegoInputPosture{Compliance: map[string]any{}}
-			} else if regoIn.Posture.Compliance == nil {
+		//
+		// The canonical location is input.route.sensitivity (set above). A
+		// missing posture stays nil so Rego reports "posture missing", not
+		// "posture stale". The legacy compliance copy is kept ONLY when a
+		// verified posture exists, so Rego modules that still read
+		// input.posture.compliance.route_sensitivity keep working during
+		// rollout.
+		if up.sensitivity != "" && regoIn.Posture != nil {
+			if regoIn.Posture.Compliance == nil {
 				regoIn.Posture.Compliance = map[string]any{}
 			}
 			regoIn.Posture.Compliance["route_sensitivity"] = up.sensitivity
 		}
+		// Passkey step-up BEFORE Rego: when the route's sensitivity needs a
+		// recent phishing-resistant assertion and the session's is older (or
+		// absent), send the browser through a passkey re-auth instead of
+		// letting Rego dead-end in a 403. Honours auditOnly (log + continue)
+		// and has a loop guard (see passkeyStepUpDecision). Runs after the
+		// posture projection so the device tier is known.
+		regoTier := ""
+		if regoIn.Posture != nil {
+			regoTier, _ = regoIn.Posture.Compliance["tier"].(string)
+		}
+		switch passkeyStepUpDecision(up.sensitivity, regoTier, blob.LastWebAuthnAt, blob.PasskeyStepUpAt, time.Now().Unix(),
+			up.auditOnly, isInteractiveBrowserRequest(req)) {
+		case passkeyStepUpAuditOnly:
+			r.metrics.AuthDecision.WithLabelValues(req.Host, auditDecisionLabel(up.auditOnly, "deny"), "would_have_denied_passkey_stepup").Inc()
+			emitWouldHaveDenied(req.Context(), r.audit, blob,
+				req.Host, req.Method, req.URL.Path, cookie.Value, up.permission, "passkey_stepup_required")
+			logger.Info("passkey step-up would have been required (audit-only)",
+				"host", req.Host, "sub", blob.Sub, "sensitivity", up.sensitivity,
+				"last_webauthn_at", blob.LastWebAuthnAt)
+		case passkeyStepUpRedirect, passkeyStepUpChallenge:
+			mfa := true
+			logger.Info("passkey step-up required",
+				"host", req.Host, "sub", blob.Sub, "sensitivity", up.sensitivity,
+				"last_webauthn_at", blob.LastWebAuthnAt)
+			r.audit.MFAChallenge(req.Context(), audit.Record{
+				Sub: blob.Sub, Email: blob.Email, Route: req.Host,
+				Method: req.Method, Path: req.URL.Path, MFA: &mfa,
+				SessionID: cookie.Value, Issuer: blob.Iss,
+			})
+			r.startAuthWithPasskey(w, req, up.sensitivity)
+			return
+		}
+
 		regoAllow, regoDenyReason, regoErr := effRego.EvaluateWithReason(req.Context(), regoIn)
 		if regoErr != nil {
 			logger.Error("rego eval failed (fail-closed)", "err", regoErr, "host", req.Host, "sub", blob.Sub)
@@ -1547,6 +1586,28 @@ func (r *Router) startAuthWithMFA(w http.ResponseWriter, req *http.Request) {
 	}
 	rd := "https://" + req.Host + req.URL.RequestURI()
 	target := r.cfg.ExternalURL.String() + "/auth/start?mfa=1&rd=" + urlQueryEscape(rd)
+	oidc.WriteHTMLRedirect(w, target)
+}
+
+// startAuthWithPasskey sends the browser to /auth/start?mfa=passkey, which
+// asks Falcon-ID for urn:hexxlock:aal3 with max_age=0 (a fresh WebAuthn
+// ceremony), returning to the original URL. Non-interactive callers
+// (XHR/API/asset/non-GET) get a 401 + RFC 9470 challenge instead of a
+// redirect they cannot follow.
+func (r *Router) startAuthWithPasskey(w http.ResponseWriter, req *http.Request, sensitivity string) {
+	if !isInteractiveBrowserRequest(req) {
+		w.Header().Set("WWW-Authenticate",
+			BuildRFC9470Challenge([]string{passkeyStepUpACR}, true, passkeyStepUpMaxAgeSec(sensitivity)))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("X-Talon-Reason", "passkey_stepup_required")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"insufficient_user_authentication","error_description":"recent passkey authentication required","acr_values":"` + passkeyStepUpACR + `"}`))
+		return
+	}
+	rd := "https://" + req.Host + req.URL.RequestURI()
+	target := r.cfg.ExternalURL.String() + "/auth/start?mfa=passkey&rd=" + urlQueryEscape(rd)
 	oidc.WriteHTMLRedirect(w, target)
 }
 

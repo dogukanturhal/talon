@@ -60,7 +60,6 @@ type Metrics struct {
 	// because the cookie's session is on a tombstone (talon:revoked:<cookieID>).
 	// Tombstones are written by the BCL/FCL receivers when Falcon-ID
 	// fans out a Sign Out via the revoke-by-sub / revoke-by-sid index
-	// (per internal engineering notes memory).
 	//
 	// Labels:
 	//   route — request host (e.g., "grafana.internal.example.com")

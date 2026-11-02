@@ -226,7 +226,7 @@ func (r *Runner) verifyOne(ctx context.Context, cookieID string) bool {
 
 	// Phase 4.2 role-loss check: decode the new access_token JWT we just
 	// received from /oauth/token. Falcon-ID embeds the user's roles in
-	// the access token (per internal engineering notes);
+	// the access token;
 	// /oauth/userinfo does not — it only carries the OIDC core §5.3
 	// scim subset. The Phase 4.1 build read from userinfo and gated on
 	// `len(claims.Roles) > 0` so the check effectively never fired in

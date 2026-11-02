@@ -35,7 +35,7 @@ revisionHistoryLimit: 2
 podAnnotations:
   linkerd.io/inject: enabled
   # No config.linkerd.io/proxy-version pin — OSS Linkerd has no stable
-  # past 2.14.10 (memory internal engineering notes), so
+  # past 2.14.10, so
   # the cluster's installed edge-* flows by default.
   # Don't enable opaque-port skip without a Server CR — see
   # internal engineering notes
@@ -461,7 +461,7 @@ ingress:
   ingressClassName: traefik-internal
   # TLS via cert-manager wildcard cluster issuer; Secret co-located with each
   # IngressRoute namespace if traefik-multi-instance picks the wrong LB
-  # (internal engineering notes).
+  #.
   tlsSecretName: internal-example-com-tls
 
 # ---------------------------------------------------------------------------
@@ -565,7 +565,7 @@ backchannelLogout:
   # https://talon-talon.talon.svc:8443/auth/backchannel-logout directly
   # over Linkerd mTLS, in addition to the public-URL path through
   # traefik-internal. Direct path is more reliable than NAT reflection
-  # for in-cluster delivery (memory internal engineering notes).
+  # for in-cluster delivery.
   directMeshAllow:
     enabled: true
     callerServiceAccount:

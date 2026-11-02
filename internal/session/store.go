@@ -88,6 +88,10 @@ type Blob struct {
 	// critical-sensitivity AAL3 access denied with "WebAuthn re-auth
 	// required" even for an operator who'd just touched their YubiKey.
 	LastWebAuthnAt  int64  `json:"last_webauthn_at,omitempty"`
+	// PasskeyStepUpAt — unix seconds when the callback completed a handshake
+	// started as a passkey step-up (/auth/start?mfa=passkey); 0 otherwise.
+	// Loop guard for the router's pre-Rego passkey step-up.
+	PasskeyStepUpAt int64 `json:"passkey_step_up_at,omitempty"`
 	SrcIP           string `json:"src_ip,omitempty"`
 	UAHash          string `json:"ua_hash,omitempty"`
 	CSRFToken       string `json:"csrf_token"`
@@ -598,6 +602,10 @@ type HandshakeState struct {
 	// the entire OIDC handshake → callback → session-create flow.
 	// Materialised into Blob.SSOChainID on successful callback.
 	SSOChainID string `json:"sso_chain_id,omitempty"`
+	// StepUp records the `mfa` mode /auth/start was called with ("1",
+	// "passkey" or empty) so the callback knows which kind of step-up this
+	// handshake was.
+	StepUp string `json:"step_up,omitempty"`
 }
 
 // encrypt serialises blob, builds the envelope with a fresh nonce, and

@@ -1,7 +1,7 @@
 # ADR 0040 — ZTNA Platform (Talon + Falcon-ID + Jess)
 
 **Status:** Accepted (Phase 0 Foundation, 2026-06-06)
-**Supersedes:** none (extends 0006, 0009, 0010, 0011)
+**Supersedes:** none (extends 0009, 0010, 0011)
 **Related siblings (to be written):**
 - Jess device-cert profile (separate repository) — device attestation + cert lifecycle
 - Jess SSH broker (separate repository) — Vault SSH-CA + Talon ext_authz integration
@@ -247,9 +247,6 @@ BeyondCorp Enterprise patterns covered:
 ### Internal cross-refs
 - ADR 0001 — Overview (Talon)
 - ADR 0003 — TalonRoute CRD
-- ADR 0004 — Continuous Verification
-- ADR 0006 — Falcon-ID integration
 - ADR 0009 — Shared PDP ext_authz
 - ADR 0010 — Fail-mode policy
 - ADR 0011 — CAEP + device posture
-- Wave 2 closure: internal engineering notes

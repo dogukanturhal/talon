@@ -215,6 +215,18 @@ func (s *Server) handleSignPosture(w http.ResponseWriter, r *http.Request) {
 	// cnf claim and reject mismatches. Closes the JWS-replay-onto-
 	// different-mTLS attack class.
 	req.deviceCertThumbprint = computeX5tS256(leaf)
+	// Tier and device_cert_valid are server-attested from the verified cert,
+	// overriding whatever the agent put in compliance.
+	applyAttestedCompliance(&req, leaf)
+	// user_sub is likewise server-attested: overwrite the agent's value with
+	// the cert CN (jess-stamped Falcon-ID sub), warning on a mismatch.
+	if cn := attestedUserSub(leaf); cn != "" {
+		if req.UserSub != cn {
+			log.Warn("agent user_sub differs from device cert CN; using cert CN",
+				zap.String("device", redactDeviceUUID(req.DeviceUUID)))
+		}
+		req.UserSub = cn
+	}
 	jws, expiresAt, err := s.issuer.IssueJWS(ctx, &req)
 	if err != nil {
 		log.Error("vault transit sign failed", zap.Error(err), zap.String("device", redactDeviceUUID(req.DeviceUUID)))

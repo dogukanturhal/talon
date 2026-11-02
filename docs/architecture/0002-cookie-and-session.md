@@ -5,7 +5,7 @@
 - **Deciders:** dogukanturhal
 - **Supersedes:** N/A
 - **Refines:** ADR 0001 §5.c (high-level cookie + session table)
-- **Related:** ADR 0003 (planned, TalonRoute CRD); ADR 0005 (planned, step-up MFA)
+- **Related:** ADR 0003 (planned, TalonRoute CRD)
 
 ---
 
@@ -25,7 +25,7 @@ nonce, AAD on the wrong field, lost-update race on sliding refresh, or a
 key-rotation procedure that doesn't actually rotate. The Falcon-ID team
 has been bitten by RFC 6265 §5.3.6 (`Domain=` rejection) and
 `Set-Cookie` write-site splits already this quarter
-(internal engineering notes); the same class of bug
+so the same class of bug
 should not recur in Talon. This ADR is the contract a reviewer holds
 `internal/session/` against.
 
@@ -43,7 +43,7 @@ Set-Cookie: talon_session=<UUIDv4>; Domain=.internal.example.com; Path=/; Expire
 |-------|-------|----------------------|
 | Cookie name | `talon_session` | Distinct from `_pomerium_*`, `_oauth2_proxy*`, `falcon_idp_session`. Single-cookie design (no `_csrf` sibling) — CSRF is handled inside the encrypted blob. |
 | Cookie value | UUIDv4 hex with dashes (36 ASCII chars) | Opaque to client; lookup key into Redis. UUIDv4 is sufficient (122-bit randomness; collision probability over 1 year × 10⁶ admins is < 2⁻⁴⁰ per the birthday bound). No JWT, no signed value — the cookie is *only* an ID. |
-| `Domain=` | `.internal.example.com` (with leading dot) | Per RFC 6265 §5.3.6: domain must be a suffix of the host that issued the cookie. Talon issues from `auth.internal.example.com`; `.internal.example.com` is a valid suffix and shares with all sibling admin hosts. **Must not** be `.example.com` (would also match the customer tier — privilege spillover) and **must not** be a cluster-internal hostname (browsers reject — see internal engineering notes). |
+| `Domain=` | `.internal.example.com` (with leading dot) | Per RFC 6265 §5.3.6: domain must be a suffix of the host that issued the cookie. Talon issues from `auth.internal.example.com`; `.internal.example.com` is a valid suffix and shares with all sibling admin hosts. **Must not** be `.example.com` (would also match the customer tier — privilege spillover) and **must not** be a cluster-internal hostname (browsers reject). |
 | `Path=` | `/` | Cookie must accompany every admin-tier request. |
 | `Expires=` + `Max-Age=` | both, set to creation time + 8 h (28800 s) | Both attributes for compatibility (Expires for HTTP/1.0-ish behaviour; Max-Age preferred per RFC 6265 §5.2.1). Sliding refresh updates *both* on every successful request — see §5.3. |
 | `HttpOnly` | present | Mitigates XSS-driven session theft from upstream apps that may render user-controlled HTML (Grafana annotations, Argo CD app names, etc.). |
@@ -96,7 +96,7 @@ Set-Cookie: talon_session=<UUIDv4>; Domain=.internal.example.com; Path=/; Expire
 | `v` | int | Schema version (current: 1). Decoder rejects unknown versions; rotation procedure for v→v+1 documented in §6. | this ADR |
 | `sub` | UUID string | Falcon-ID `sub` claim; primary subject identifier. | id_token |
 | `email` | string | For audit logs and X-Talon-Email injection. | id_token (or /userinfo if missing) |
-| `groups` | array of string | For group-filter and SpiceDB user-group binding. | id_token `groups` claim (per internal engineering notes) |
+| `groups` | array of string | For group-filter and SpiceDB user-group binding. | id_token `groups` claim |
 | `tenant_id` | UUID string | For multi-tenant routing if Talon ever fronts a per-tenant admin tier. | id_token `tenant_id` claim |
 | `iss` | string | Verify on read; rejects sessions issued by a non-canonical IdP. | id_token `iss` |
 | `amr` | array of string | For Phase 4 step-up MFA gating (`mfa` value present iff Falcon-ID asserted MFA). | id_token `amr` |
@@ -348,8 +348,6 @@ When a session-blob field changes shape:
 - [NIST SP 800-38D — AES-GCM](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf)
 - [Go `crypto/aes` and `crypto/cipher.NewGCM`](https://pkg.go.dev/crypto/cipher#NewGCM)
 - ADR 0001 §5.c — high-level cookie + session table this ADR refines
-- internal engineering notes (memory) — `Set-Cookie` write-site split lesson
-- internal engineering notes (memory) — Vault + SECRETS.local.txt dual store rule
 
 ---
 

@@ -56,7 +56,7 @@ their certificate body prefers.
 | **A.5.18** | Access rights | `request.allow`, `request.deny` — SpiceDB CheckPermission decisions per ADR 0001 §5.b schema |
 | **A.8.2** | Privileged access rights | `request.allow:permission=admin`, `admin.revoke` |
 | **A.8.3** | Information access restriction | `request.allow`, `request.deny` |
-| **A.8.5** | Secure authentication | `oidc.callback`, `auth.mfa_challenge` (WebAuthn step-up evidence lands here once Gap 3 ships) |
+| **A.8.5** | Secure authentication | `oidc.callback`, `auth.mfa_challenge` (WebAuthn step-up evidence lands here once step-up MFA ships) |
 | **A.8.15** | Logging | `*` — every audit event is itself the evidence |
 | **A.8.16** | Monitoring activities | `cv.invalidate` |
 
@@ -68,7 +68,7 @@ their certificate body prefers.
 | **Art. 5(1)(e) — storage limitation** | 8h sliding TTL on the session record, 8h hard `Exp`, 30d cap on the per-sub revocation index, 5min cap on OIDC handshake state. Audit-log WORM retention: 7 years (boot prompt §7 #2, paired with Platform Security Stack Gap 7 — see §5 below). |
 | **Art. 17 — right to erasure** | `talon evidence redact --user=<sub>` rewrites the matching user's PII fields (sub, email, src_ip, session_id) to `sha256:<hex>` form, adds `redacted=true` + `redaction_reason=gdpr_art_17` + `redaction_at=<RFC3339>` markers, and pipes through into the export pipeline. The hash is deterministic across events so the auditor's count + sequence stay intact (Art. 17(3)(e) retention for legal claims). `ua_hash` is already SHA-256 in the upstream pipeline. |
 | **Art. 30 — records of processing** | This document + ADR 0001 + ADR 0002. |
-| **Art. 32 — security of processing** | AES-256-GCM session blob (ADR 0002 §4.2), Linkerd mTLS in-cluster (ADR 0001 §8 trust boundaries), JWKS-validated id_token, Vault-backed secrets, ServiceClient OAuth bootstrap (memory: internal engineering notes). |
+| **Art. 32 — security of processing** | AES-256-GCM session blob (ADR 0002 §4.2), Linkerd mTLS in-cluster (ADR 0001 §8 trust boundaries), JWKS-validated id_token, Vault-backed secrets, ServiceClient OAuth bootstrap. |
 
 ## 4. Audit evidence chain — end-to-end reconstruction
 
@@ -103,8 +103,8 @@ chains, so the `hmac_key_id` in the manifest pins which key signed.
 
 ## 5. WORM archive retention
 
-> **Pending** — paired with Platform Security Stack Gap 7. Locked
-> decisions (boot prompt §7 #2): 7-year retention on a MinIO
+> **Pending** — not yet implemented. Locked
+> decisions: 7-year retention on a MinIO
 > `audit-archive` bucket with object lock; coordinate the bucket
 > prefix with Platform Security Stack so Talon and falco audit streams
 > share the same lifecycle policy. Talon-side prefix:
@@ -166,7 +166,6 @@ cosign verify-blob --key cosign.pub \
 - ADR 0001 §7 (threat model — repudiation mitigations).
 - ADR 0002 §4.1 (session blob field set — data minimisation evidence).
 - `cmd/talon/evidence.go::controlMap` — runtime mirror of §1 + §2.
-- Memory: internal engineering notes (Vault + secrets dual-store).
 
 ---
 

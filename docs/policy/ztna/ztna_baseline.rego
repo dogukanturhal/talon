@@ -196,11 +196,18 @@ network_class := nc if {
 # Sensitive route classification
 #
 # Routes the operator manually flags as sensitive in the TalonRoute
-# spec are surfaced via posture.compliance.route_sensitivity (string:
-# "low"|"medium"|"high"|"critical"). Defaults to medium.
+# spec are surfaced via input.route.sensitivity (string:
+# "low"|"medium"|"high"|"critical"); the legacy location
+# input.posture.compliance.route_sensitivity is still read as a fallback.
+# Defaults to medium.
 # ------------------------------------------------------------------ #
 
 route_sensitivity := s if {
+	s := input.route.sensitivity
+	s != ""
+} else := s if {
+	# Legacy location (talon < route-input): kept so either talon version
+	# works during rollout.
 	s := input.posture.compliance.route_sensitivity
 } else := "medium"
 
