@@ -10,7 +10,7 @@
   - The pattern: one Server CR + one (or more) AuthorizationPolicy +
     MeshTLSAuthentication per allowed caller. The dual-codepath
     ServerAuthorization is emitted alongside for edge-26.4.x binding-race
-    safety (memory internal engineering notes).
+    safety.
 */}}
 apiVersion: policy.linkerd.io/v1beta1
 kind: Server

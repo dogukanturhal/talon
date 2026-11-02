@@ -598,5 +598,3 @@ This isn't just about gitlab/harbor. Once Talon has machine identity:
 - Pomerium service accounts documentation
 - BeyondCorp Enterprise — service-token reference architecture
 - HexxLock ADR 0030 §"Pattern C"
-- internal engineering notes
-- internal engineering notes

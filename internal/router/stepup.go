@@ -2,6 +2,7 @@
 package router
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -217,4 +218,104 @@ func BuildRFC9470Challenge(acrValues []string, mfaRequired bool, maxAgeSec int) 
 		b.WriteString(strconv.Itoa(maxAgeSec))
 	}
 	return b.String()
+}
+
+// passkeyStepUpACR is the Falcon-ID acr_values token for the AAL3
+// (phishing-resistant WebAuthn/passkey) level (falcon-id
+// internal/services/oauth_provider_service_claims.go:46, advertised in
+// discovery acr_values_supported). Talon asks for it on a passkey step-up and
+// does NOT trust it blindly: the IdP's ACR gate accepts any MFA factor, so the
+// callback only refreshes Blob.LastWebAuthnAt when the new id_token's amr
+// actually carries a hardware/software-key factor (hardwareFactorAuthTime).
+const passkeyStepUpACR = "urn:hexxlock:aal3" //nolint:gosec // ACR URN, not a credential
+
+// passkeyStepUpLoopGuardSec bounds how long after a passkey step-up round
+// trip a still-stale passkey time is treated as "the step-up just ran and did
+// not help" (user picked TOTP, IdP ignored acr, ...). Within the window Talon
+// falls through to the normal Rego deny instead of redirecting again. The
+// marker is Blob.PasskeyStepUpAt, set only when the callback completed a
+// handshake that was started as a passkey step-up, so ordinary sign-ins and
+// silent-SSO re-auth never trip the guard.
+const passkeyStepUpLoopGuardSec = 180
+
+// passkeyStepUpMaxAgeSec is the passkey freshness window that triggers a
+// step-up: the STRICTEST window the ZTNA baseline Rego applies for the
+// sensitivity (ztna_baseline.rego: TIER_BYOD aal3 needs webauthn_fresh_1h on
+// high; TIER_CORP critical needs webauthn_fresh_1h). It is deliberately
+// stricter than mfaMaxAgeSecForSensitivity (12h for high), so a high route
+// does not dead-end in a 403 for BYOD. Routes below high are not stepped up.
+func passkeyStepUpMaxAgeSec(sensitivity string) int {
+	switch sensitivity {
+	case "critical", "high":
+		return 3600
+	default:
+		return 0
+	}
+}
+
+// passkeyStepUpAction is the outcome of passkeyStepUpDecision.
+type passkeyStepUpAction int
+
+const (
+	// passkeyStepUpNone: no step-up needed (or the loop guard tripped); fall
+	// through to the Rego decision.
+	passkeyStepUpNone passkeyStepUpAction = iota
+	// passkeyStepUpRedirect: interactive browser request; redirect to a
+	// passkey re-authentication with the original URL as return target.
+	passkeyStepUpRedirect
+	// passkeyStepUpChallenge: API/XHR/asset request; answer 401 with an
+	// RFC 9470 challenge instead of a redirect.
+	passkeyStepUpChallenge
+	// passkeyStepUpAuditOnly: step-up would be required but the route is
+	// auditOnly; log the would-deny and let the request continue.
+	passkeyStepUpAuditOnly
+)
+
+// passkeyStepUpDecision decides, BEFORE Rego runs, whether the request must
+// first go through a passkey step-up. It is a pure function of its inputs so
+// the loop guard is unit-testable.
+//
+//   - tier: posture compliance tier ("" when unknown). TIER_BREAKGLASS on a
+//     critical route is allowed by the Rego without any webauthn recency, so
+//     it is never stepped up.
+//   - lastWebAuthnAt: Blob.LastWebAuthnAt (0 = no hardware factor ever).
+//   - passkeyStepUpAt: Blob.PasskeyStepUpAt (0 = this session did not come
+//     from a passkey step-up).
+//   - interactive: GET/HEAD navigation expecting HTML (see isInteractiveBrowserRequest).
+func passkeyStepUpDecision(sensitivity, tier string, lastWebAuthnAt, passkeyStepUpAt, now int64, auditOnly, interactive bool) passkeyStepUpAction {
+	maxAge := passkeyStepUpMaxAgeSec(sensitivity)
+	if maxAge <= 0 {
+		return passkeyStepUpNone
+	}
+	if sensitivity == "critical" && tier == "TIER_BREAKGLASS" {
+		return passkeyStepUpNone
+	}
+	if lastWebAuthnAt > 0 && now-lastWebAuthnAt <= int64(maxAge) {
+		return passkeyStepUpNone
+	}
+	// Loop guard: a passkey step-up just completed and the passkey time is
+	// still stale, so another redirect cannot help. Fall through to the deny.
+	if passkeyStepUpAt > 0 && now-passkeyStepUpAt >= 0 && now-passkeyStepUpAt <= passkeyStepUpLoopGuardSec {
+		return passkeyStepUpNone
+	}
+	if auditOnly {
+		return passkeyStepUpAuditOnly
+	}
+	if interactive {
+		return passkeyStepUpRedirect
+	}
+	return passkeyStepUpChallenge
+}
+
+// isInteractiveBrowserRequest reports whether req is a top-level browser
+// navigation that can follow a redirect chain: GET/HEAD, not an XHR/asset
+// fetch, and an Accept header that lists text/html.
+func isInteractiveBrowserRequest(req *http.Request) bool {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return false
+	}
+	if isXHROrAssetRequest(req) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(req.Header.Get("Accept")), "text/html")
 }

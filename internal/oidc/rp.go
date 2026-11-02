@@ -146,6 +146,35 @@ func New(ctx context.Context, cfg *config.Config, store *session.Store) (*RP, er
 // make Falcon-ID run an in-place MFA challenge instead.
 var stepUpParams = map[string]string{"acr_values": "mfa", "max_age": "0"}
 
+// passkeyStepUpParams are the authorize params for a passkey step-up
+// (?mfa=passkey): the Falcon-ID AAL3 (phishing-resistant WebAuthn) ACR plus
+// max_age=0 so the IdP re-authenticates instead of replaying the SSO session
+// (falcon-id oauth_provider_handler.go:501-561). Falcon-ID's ACR gate accepts
+// any MFA factor, so the callback still verifies amr before trusting it
+// (hardwareFactorAuthTime).
+var passkeyStepUpParams = map[string]string{"acr_values": "urn:hexxlock:aal3", "max_age": "0"}
+
+// stepUpMode normalises the /auth/start `mfa` query value to a known mode.
+func stepUpMode(mfa string) string {
+	if stepUpAuthParams(mfa) == nil {
+		return ""
+	}
+	return mfa
+}
+
+// stepUpAuthParams returns the extra authorize params for the /auth/start
+// `mfa` query value: "1" = generic MFA, "passkey" = AAL3 passkey; anything
+// else = none.
+func stepUpAuthParams(mfa string) map[string]string {
+	switch mfa {
+	case "1":
+		return stepUpParams
+	case "passkey":
+		return passkeyStepUpParams
+	}
+	return nil
+}
+
 // HandleStart responds to GET /auth/start by emitting a state cookie,
 // caching the PKCE verifier in Redis, and redirecting (HTML-scaffolded) to
 // Falcon-ID's /oauth/authorize. Query param `rd` is the original return
@@ -176,6 +205,7 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 		SrcIP:        ClientIP(req),
 		CreatedAt:    time.Now().Unix(),
 		SSOChainID:   ssoChainID,
+		StepUp:       stepUpMode(req.URL.Query().Get("mfa")),
 	}
 	if err := r.store.SaveHandshake(req.Context(), state, hs); err != nil {
 		logger.Error("save handshake", "err", err)
@@ -215,11 +245,8 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 			"code_challenge_method": {"S256"},
 			"nonce":                 {nonce},
 		}
-		if req.URL.Query().Get("mfa") == "1" {
-			params.Set("acr_values", "mfa")
-			for k, v := range stepUpParams {
-				params.Set(k, v)
-			}
+		for k, v := range stepUpAuthParams(req.URL.Query().Get("mfa")) {
+			params.Set(k, v)
 		}
 		if hint != "" {
 			params.Set("login_hint", hint)
@@ -249,10 +276,8 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 	// Step-up MFA: caller signals via ?mfa=1 (set by router when the
 	// route has mfaRequired and session lacks amr=mfa). Forces Falcon-ID
 	// to re-prompt for MFA per ADR 0001 §6.
-	if req.URL.Query().Get("mfa") == "1" {
-		for k, v := range stepUpParams {
-			opts = append(opts, oauth2.SetAuthURLParam(k, v))
-		}
+	for k, v := range stepUpAuthParams(req.URL.Query().Get("mfa")) {
+		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
 	if hint != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("login_hint", hint))
@@ -503,6 +528,9 @@ func (r *RP) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		}(),
 		SID: claims.SID,
 	}
+	if hs.StepUp == "passkey" {
+		blob.PasskeyStepUpAt = now
+	}
 	// Field-level AES-GCM wrap of the refresh_token under the cookie-encrypt
 	// key per ADR 0002 §4.1 (IAP-04). The outer Blob AEAD already protects
 	// the at-rest Redis value; this second layer means an in-process compromise
@@ -629,7 +657,7 @@ func (r *RP) HandleLogout(w http.ResponseWriter, req *http.Request) {
 			// scope the logout to a specific session if present. We don't
 			// have the full id_token (Talon doesn't store it — only the
 			// jti), but Falcon-ID accepts the jti as a hint per migration
-			// 213 (see internal engineering notes).
+			// 213.
 			q.Set("id_token_hint", idTokenJTI)
 		}
 		dest = r.endSessionEndpoint + "?" + q.Encode()
@@ -706,7 +734,7 @@ func (r *RP) isSafeReturnURL(rd string) bool {
 }
 
 // claimsBody is the subset of id_token claims Talon consumes; matches the
-// shape Falcon-ID emits (per internal engineering notes).
+// shape Falcon-ID emits.
 type claimsBody struct {
 	Sub   string `json:"sub"`
 	Email string `json:"email"`

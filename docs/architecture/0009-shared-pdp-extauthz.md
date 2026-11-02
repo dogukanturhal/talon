@@ -3,7 +3,7 @@
 - **Status:** Proposed (Phase 7.1 in flight 2026-06-01)
 - **Date:** 2026-06-01
 - **Deciders:** dogukanturhal
-- **Refines:** ADR 0001 §3 (PEP/PDP roles), ADR 0005 (forward-auth)
+- **Refines:** ADR 0001 §3 (PEP/PDP roles)
 - **Related:** ADR 0003 (TalonRoute CRD), Gateway API GEP-1494, Envoy
   service.auth.v3
 
@@ -30,7 +30,7 @@ The HexxLock edge has two tiers with two data planes:
   defense.
 
 Today APISIX consults Talon for identity via the HTTP `/auth/verify`
-forward-auth endpoint (ADR 0005). That works but is bespoke — no
+forward-auth endpoint. That works but is bespoke — no
 other data plane speaks it natively. If we ever add a second
 customer-tier data plane (Envoy Gateway for partner APIs, Cilium
 ambient mesh, Istio waypoint, etc.) we'd have to teach each one to
@@ -93,7 +93,7 @@ formats produce IDENTICAL decisions for the same request.
    │  │ serveAuthVerify │    │  extauthz.Server        │ │
    │  │ /auth/verify    │    │  ListenExtAuthz=:9001   │ │
    │  │ HTTP forward-   │    │  GEP-1494-aligned       │ │
-   │  │ auth (ADR 0005) │    │                         │ │
+   │  │ auth            │    │                         │ │
    │  └─────────────────┘    └─────────────────────────┘ │
    └──────────────────────────────────────────────────────┘
               ▲                       ▲              ▲
@@ -186,7 +186,7 @@ is identical to `net/http` semantics (RFC 6265).
 - `HttpResponse = DeniedHttpResponse{ Status: 401 Unauthorized,
   Headers: [X-Talon-Reason: <policy.ReasonX>, Cache-Control: no-store] }`
 - Same `X-Talon-Reason` vocabulary the HTTP adapter has been emitting
-  since ADR 0005. APISIX / Envoy Gateway / Istio branch on this
+  since the first release. APISIX / Envoy Gateway / Istio branch on this
   header to decide redirect-to-login vs hard-fail.
 
 **Step-up needed (mfaRequired/requireACR not satisfied):**
@@ -200,7 +200,7 @@ is identical to `net/http` semantics (RFC 6265).
 
 CheckResponses are NOT cached by Envoy's ext_authz filter by default,
 and we explicitly emit `Cache-Control: no-store` on deny responses
-to preserve the session-revocation invariant (ADR 0001 §7.b / Gap 2
+to preserve the session-revocation invariant (ADR 0001 §7.b:
 streaming revocation cascade).
 
 ## 8. Coexistence with HTTP `/auth/verify`
@@ -215,7 +215,7 @@ Both adapters stay live during transition:
   Policy gate access. APISIX `ext-plugin-pre-req` or `forward-auth`
   plugin reconfigured to consume gRPC ext_authz.
 - **Phase 7.3 (future):** soak validates decision-equivalence between
-  the two adapters. ADR 0005 forward-auth path marked deprecated;
+  the two adapters. The HTTP forward-auth path is marked deprecated;
   not deleted yet (other future consumers may still want HTTP).
 
 ## 9. Consequences

@@ -22,7 +22,7 @@
 //
 // Pomerium ships PPL→Rego at the Enterprise tier; OSS Linkerd has no
 // equivalent. Talon shipping Rego at the OSS tier is the
-// boot-prompt-§4-Gap-5 differentiator (memory: internal engineering notes).
+// boot-prompt-§4-Gap-5 differentiator.
 package policy
 
 import (
@@ -100,6 +100,11 @@ type RegoInputUser struct {
 type RegoInputRoute struct {
 	Host       string `json:"host"`
 	Permission string `json:"permission"`
+	// Sensitivity is the operator-declared route class
+	// ("low"|"medium"|"high"|"critical"); empty when unset. Lives here (not
+	// in posture.compliance) so a missing posture is not masked by a
+	// synthetic posture object created only to carry it.
+	Sensitivity string `json:"sensitivity,omitempty"`
 }
 
 // RegoInputRequest is the per-request envelope. Talon populates these

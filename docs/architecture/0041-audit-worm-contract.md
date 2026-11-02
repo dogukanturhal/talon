@@ -10,8 +10,8 @@
 Talon's audit log is the durable record of every PDP decision, every
 session lifecycle event, every Rego deny reason, every CAEP SET sent
 or received. Today the audit emitter writes structured rows to
-`audit-archive` MinIO with WORM object-lock (internal engineering notes
-memory entry, locked 2026-04-27). What's missing for tier-1:
+`audit-archive` MinIO with WORM object-lock (locked 2026-04-27).
+What is missing:
 
 1. **Codified JSON contract** — operators currently rely on field
    names matching `internal/audit/event.go` source-of-truth; no
@@ -190,8 +190,7 @@ overall PDF report (rendered via embedded template).
 
 ### 8.e — Retention + deletion policy
 
-- WORM retention: **7 years** (matches internal engineering notes
-  standing decision 2026-04-27).
+- WORM retention: **7 years** (standing decision, 2026-04-27).
 - Object-lock mode: **governance** (allows authorized deletion for
   GDPR Art. 17 erasure requests under explicit operator key).
 - Cold-storage tier: after 90 days, objects transition to MinIO
@@ -254,7 +253,6 @@ Vendor candidates per pending decision P-005: Bishop Fox / NCC Group / Cure53.
 
 - Talon ADR 0040 — ZTNA Platform (Phase 8)
 - Talon ADR 0040-A — Threat Model (TT1..TT4 audit threats)
-- internal engineering notes memory — 7-year WORM standing decision
 - NIST SP 800-207 §2.1 (Tenets) + §3.4.1 (Continuous diagnostics)
 - BeyondCorp reference architecture (Cloudflare One)
 - SOC2 Trust Services Criteria CC6 family

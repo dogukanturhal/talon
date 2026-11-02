@@ -44,7 +44,7 @@ import (
 // import internal/audit here — the CLI must be able to read audit logs
 // emitted by older Talon binaries whose Record shape may have drifted
 // from current master. Forward compatibility is essential for the
-// 7-year retention horizon (internal engineering notes).
+// 7-year retention horizon.
 type auditRecord struct {
 	// chain.Stamp embedded fields.
 	Seq      int64  `json:"seq,omitempty"`

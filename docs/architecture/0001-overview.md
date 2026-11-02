@@ -1,14 +1,12 @@
 # ADR 0001 — Talon: architecture overview, NIST SP 800-207 mapping, and threat model
 
-- **Status:** Accepted (locked by project boot prompt 2026-04-26)
+- **Status:** Accepted
 - **Date:** 2026-04-26
 - **Deciders:** dogukanturhal (project owner)
 - **Supersedes:** N/A (first ADR)
 - **Superseded by:** N/A
 - **Related:**
-  - `HANDOFF_TIER1_OPS_IAP_REPLACEMENT_PROMPT.md` (situation/options analysis that
-    led to "build, don't reuse")
-  - internal engineering notes (project memory — non-negotiable rules)
+  - Options analysis behind the build-in-house decision (summarised in section 2)
   - ADR 0002 (planned) — cookie and session encoding details
   - ADR 0003 (planned) — TalonRoute CRD schema and conversion strategy
 
@@ -33,7 +31,7 @@ combination that triggers Mobile Safari's "is this a download?" heuristic. The
 admin tier is therefore unreachable from iPhone, which is the most common
 on-call device.
 
-The handoff document (`HANDOFF_TIER1_OPS_IAP_REPLACEMENT_PROMPT.md`) evaluated
+The options analysis evaluated
 five paths: APISIX `openid-connect`, Authentik proxy provider, Authelia
 forward-auth, fork-and-patch Pomerium, and an in-house IAP. Each was scored
 against the standing rules:
@@ -49,8 +47,8 @@ against the standing rules:
    (federation hop adds latency without addressing the actual bug).
 
 The remaining candidates were APISIX `openid-connect` (mature, lua-resty-openidc
-backed) and the in-house path. The user picked the **in-house path**, named it
-**Talon**, and locked the architecture in the boot prompt. This ADR documents
+backed) and the in-house path. The project owner chose the **in-house path**, named it
+**Talon**, and locked the architecture. This ADR documents
 that decision and its consequences.
 
 ## 3. Decision
@@ -162,7 +160,7 @@ pattern already used by Falcon-ID
 
 | Property | Value | Source |
 |----------|-------|--------|
-| Cookie name | `talon_session` | Locked by boot prompt §3 |
+| Cookie name | `talon_session` | Locked at project start |
 | Value shape | Opaque UUID v4, ≤ 200 bytes total cookie | Avoids 4 KB browser cap and iOS truncation |
 | `Domain` | `.internal.example.com` | RFC 6265 §5.3.6; all admin hosts are subdomains, all share session |
 | `HttpOnly` | true | Mitigate XSS session theft |
@@ -327,7 +325,7 @@ Three trust boundaries cross Talon:
 - **Argo CD deny-window.** Talon Application rolls under the same deny
   window as the rest of the platform. Manual Argo sync from inside the
   argocd-server pod is the documented break-glass
-  (internal engineering notes).
+  procedure.
 - **Per-route blast radius.** A bad TalonRoute hits one host; Pomerium
   config errors today hit the whole admin tier. Net improvement.
 - **Continuous verification cadence (Phase 4) puts Falcon-ID under load.**
@@ -345,7 +343,7 @@ Three trust boundaries cross Talon:
   with one OIDC trust path.
 - Per-route policy in Kubernetes-native form (`TalonRoute` CRD) with
   RBAC, OpenAPI validation, and admission webhooks. ConfigMap-driven
-  routes were rejected for losing all of these (boot prompt §3).
+  routes were rejected for losing all of these.
 - The Falcon-ID `writeOAuthHTMLRedirect` pattern gets a second
   implementation site, hardening the cross-origin-redirect contract
   across the platform.
@@ -377,29 +375,16 @@ Three trust boundaries cross Talon:
   existing cert-manager + Linkerd issuer pattern; no new operational
   surface.
 - New OIDC client `svc-talon` registered in Falcon-ID via the existing
-  ServiceClientClaim Crossplane pattern (internal engineering notes).
+  ServiceClientClaim Crossplane pattern.
   No new bootstrap flow.
 
 ## 11. Open questions / deferred to subsequent ADRs
 
-> **Note:** Numbering renumbered 2026-04-27 by ADR 0008 +
-> `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md` v2 — original §11
-> predicted ADR 0004 = forward-auth and ADR 0005 = step-up MFA, but
-> the gap-closure plan slots continuous-verification into 0004 and
-> forward-auth into 0005. Predictions below reflect the current,
-> locked numbering.
 
 | Question | Deferred to | Reason |
 |----------|-------------|--------|
 | Session blob exact JSON shape, encryption-key rotation procedure | ADR 0002 | Detail-level, doesn't change architecture |
 | `TalonRoute` CRD schema, conversion-webhook strategy for v1alpha1→v1beta1 | ADR 0003 | Locks before Phase 2 starts |
-| Continuous verification cadence + streaming revocation + JWKS cache | ADR 0004 | Tier-1 Gap 2; week 2 of gap-closure plan |
-| Forward-auth endpoint shape for APISIX integration | ADR 0005 | Tier-1 Gap 7; week 1 of gap-closure plan |
-| Falcon-ID integration quirks (PKCE, schema, claims, logout chain) | ADR 0006 | Reference doc — captures post-marathon contract |
-| Falcon-ID SDK contract + SLO race fix | ADR 0007 | Tier-1 Gap 8; week 1 of gap-closure plan |
-| Tier-1 scoring baseline (post-Phase 5 + post-marathon) | ADR 0008 | Snapshot of starting point for gap-closure |
-| Policy evaluation refinements (Rego escape hatch + Cedar equivalence) | ADR 0009 (planned) | Tier-1 Gap 5; week 3 of gap-closure plan |
-| Step-up MFA `acr_values` contract with Falcon-ID | ADR 0010 (planned) | Tier-1 Gap 3; weeks 2-4 of gap-closure plan |
 | Device-posture signal source(s) | Phase 6 (backlog) | Out of scope for Phases 0–5 + Tier-1 |
 | Adaptive risk integration with Slice F | Phase 6 (backlog) | As above |
 
@@ -434,16 +419,11 @@ Three trust boundaries cross Talon:
 
 - [WebKit Bugzilla — URL redirect category](https://bugs.webkit.org/show_bug.cgi?id=24175)
 - Live captured Pomerium 302 evidence —
-  `HANDOFF_TIER1_OPS_IAP_REPLACEMENT_PROMPT.md` §"What broke and why"
+  the original options analysis
 - Falcon-ID `writeOAuthHTMLRedirect` reference impl —
   `/home/dogukanturhal/projects/falcon-id/internal/handlers/oauth_provider_handler.go`
 
-### Process / discipline
 
-- internal engineering notes (memory) — the five non-negotiables
-- internal engineering notes (memory) — root-cause discipline
-- internal engineering notes (memory) — OSS-only rule
-- internal engineering notes (memory) — research-before-decide
 
 ---
 

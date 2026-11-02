@@ -16,7 +16,7 @@ Live state captured 2026-04-26 by an unpublished e2e test.
 
 | Host | Status | Final URL post-Talon | Action needed |
 |------|--------|----------------------|---------------|
-| `prometheus.ops` | ❌ 502 | `/` | **Linkerd Server CR fix** — `prometheus-http` `proxyProtocol: HTTP/1` rejects Talon SA mTLS handshake. Direct curl from another meshed pod also 502s. Either flip the Server CR to `proxyProtocol: opaque`, or correct the actual protocol. See internal engineering notes. |
+| `prometheus.ops` | ❌ 502 | `/` | **Linkerd Server CR fix** — `prometheus-http` `proxyProtocol: HTTP/1` rejects Talon SA mTLS handshake. Direct curl from another meshed pod also 502s. Either flip the Server CR to `proxyProtocol: opaque`, or correct the actual protocol. |
 | `alertmanager.ops` | ✅ | `/#/alerts` | none — pure proxy works |
 | `grafana.ops` | ⚠️ | `/login` | **Grafana OAuth flow broken** — OAuth client `grafana` exists in Falcon-ID with the correct `redirect_uris`, and `grafana.ini` has full `auth.generic_oauth` config. Clicking the "Falcon-ID" button stays on `/login`. Likely causes: (a) Grafana's `envFromSecret: grafana-oidc-client-secret` is empty/wrong; (b) Falcon-ID `oauth_clients.client_secret_hash` doesn't match. Check `kubectl -n monitoring get secret grafana-oidc-client-secret -o yaml` and Grafana pod logs. |
 | `jaeger.ops` | ✅ | `/search` | none |

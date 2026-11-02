@@ -60,7 +60,7 @@
 |----|--------|--------|--------|-------------|
 | TN1 | Spoofing | Attacker on adjacent VLAN MITMs cluster-internal traffic | High | Linkerd mTLS for every cluster-internal hop; no plaintext HTTP between meshed pods; AuthorizationPolicy default-deny |
 | TN2 | Spoofing | Attacker bypasses Envoy Gateway and reaches upstream directly | High | NetworkPolicy denies non-EG traffic into upstream namespaces; Talon ext_authz gate at EG level |
-| TN3 | Tampering | TLS termination at Traefik, plaintext to EG | Medium | Linkerd mTLS protects Traefik → EG hop; explicit `ProxyProtocol` configured per feedback memo internal engineering notes |
+| TN3 | Tampering | TLS termination at Traefik, plaintext to EG | Medium | Linkerd mTLS protects Traefik → EG hop; explicit `ProxyProtocol` configured |
 | TN4 | Information disclosure | Traffic mirror to attacker-controlled destination | High | Cluster network policy restricts egress; Falco rule for unusual outbound destinations |
 | TN5 | Denial of service | Layer-7 flood at Envoy edge | Medium | Envoy rate-limit (envoy-ratelimit-redis) with 7 distinct rate-limit profiles on auth surfaces; Cloudflare edge DDoS |
 | TN6 | Spoofing | Stolen Linkerd cluster identity | Critical | Linkerd identity rotated per-pod 24h; jess-ca compromise drill in Phase 9 covers this |
@@ -82,7 +82,7 @@
 
 | ID | STRIDE | Threat | Impact | Mitigations |
 |----|--------|--------|--------|-------------|
-| TT1 | Tampering | Attacker modifies historical audit log | Critical | WORM bucket on `audit-archive` MinIO with object-lock governance; 7-year retention per internal engineering notes; immutable per-object after write |
+| TT1 | Tampering | Attacker modifies historical audit log | Critical | WORM bucket on `audit-archive` MinIO with object-lock governance; 7-year retention; immutable per-object after write |
 | TT2 | Information disclosure | Audit log records PII | High | Audit schema defined in Phase 8 ADR; `subject` is pairwise per RP; no plaintext password / token in `event_data` |
 | TT3 | Denial of service | Audit log floods due to per-request emission | Medium | Audit-event coalescing on the high-volume path (Talon `internal/audit`); WORM bucket scales horizontally on MinIO tenant |
 | TT4 | Repudiation | Audit log gap during outage | High | Talon audit emitter has local buffer + retry; Phase 8 schema includes per-event sequence number — gaps detectable |
@@ -92,7 +92,7 @@
 | ID | STRIDE | Threat | Impact | Mitigations |
 |----|--------|--------|--------|-------------|
 | TF1 | Spoofing | Attacker presents forged Vault PKI cert | Critical | Vault PKI roots stored in HSM-backed key store (HashiCorp Vault Transit); roots only signed by HW-attested operator action; jess-ca CDP/AIA/OCSP published live (2026-06-04 per internal engineering notes) |
-| TF2 | Tampering | Attacker modifies Vault PKI role / mount config | Critical | Atlantis-managed Vault TF; per-mount `max_lease_ttl` capped (per feedback internal engineering notes); change-management via Atlantis MR |
+| TF2 | Tampering | Attacker modifies Vault PKI role / mount config | Critical | Atlantis-managed Vault TF; per-mount `max_lease_ttl` capped; change-management via Atlantis MR |
 | TF3 | Spoofing | Stolen Vault root token | Critical | Root token issued only via shamir-unseal quorum; rotated quarterly; AppRole + AppRole-secret-id for app paths; vault-ha-token-renewer kept short-TTL |
 | TF4 | Denial of service | Vault sealed (e.g. all nodes down) | Critical | Vault HA 3-node Raft; auto-unseal via Transit (different mount); DR drill in Phase 9 |
 | TF5 | Information disclosure | Vault PKI keys exposed | Critical | Vault Transit encrypts all-at-rest; audit log on every key access; vault-vm + Linkerd mTLS for transport |

@@ -232,3 +232,57 @@ func isDeviceSPIFFE(u *url.URL) bool {
 		u.Host == "example.com" &&
 		strings.HasPrefix(u.Path, "/device/")
 }
+
+// deviceTierURIPrefix prefixes the URI SAN jess stamps on device certs with
+// the device's server-recorded tier (e.g. urn:hexxlock:device-tier:TIER_CORP).
+const deviceTierURIPrefix = "urn:hexxlock:device-tier:"
+
+// attestedTierFromCert returns the tier asserted by the device cert's tier
+// URI SAN. Exactly one recognised tier SAN yields that tier; a missing,
+// unrecognised, or conflicting (multiple distinct) SAN yields TIER_BYOD, the
+// least-privileged bucket. The cert must already be chain-verified.
+func attestedTierFromCert(cert *x509.Certificate) string {
+	tier := ""
+	for _, u := range cert.URIs {
+		raw := u.String()
+		if !strings.HasPrefix(raw, deviceTierURIPrefix) {
+			continue
+		}
+		t := strings.TrimPrefix(raw, deviceTierURIPrefix)
+		switch t {
+		case "TIER_CORP", "TIER_BYOD", "TIER_BREAKGLASS":
+		default:
+			return string(TierBYOD)
+		}
+		if tier != "" && tier != t {
+			return string(TierBYOD)
+		}
+		tier = t
+	}
+	if tier == "" {
+		return string(TierBYOD)
+	}
+	return tier
+}
+
+// applyAttestedCompliance overwrites the agent-reported `tier` and
+// `device_cert_valid` compliance facts with values the server attests from
+// the mTLS-verified device cert. The baseline Rego reads both from
+// input.posture.compliance; the agent must not be able to set them.
+func applyAttestedCompliance(req *HeartbeatRequest, leaf *x509.Certificate) {
+	if req.Compliance == nil {
+		req.Compliance = map[string]any{}
+	}
+	req.Compliance["tier"] = attestedTierFromCert(leaf)
+	req.Compliance["device_cert_valid"] = true
+	// These are policy inputs derived by Talon itself; never accept them
+	// from the agent.
+	delete(req.Compliance, "route_sensitivity")
+	delete(req.Compliance, "network_class")
+}
+
+// attestedUserSub returns the user sub the cert attests (jess stamps the
+// Falcon-ID sub into the CN; the Vault role ignores the CSR's CN).
+func attestedUserSub(leaf *x509.Certificate) string {
+	return leaf.Subject.CommonName
+}
