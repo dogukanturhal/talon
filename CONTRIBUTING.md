@@ -51,6 +51,28 @@ To try changes end to end, use [examples/quickstart](examples/quickstart):
 - Say what you ran. If you changed authentication or authorization behaviour,
   say which identity provider you tested against.
 
+## Keep pull requests small
+
+This project has one maintainer who reads every line before merging. Large pull requests can't be reviewed properly, so they are not accepted.
+
+- **One change per pull request.** One bug fix, one feature, or one refactor. Don't mix formatting or unrelated clean-ups into it.
+- **Size limit: 400 changed lines and 15 files** (additions plus deletions; `go.sum`, `package-lock.json`, `Cargo.lock` and generated files don't count). Aim for under 200. An automated check fails pull requests over the limit.
+- **Bigger change? Open an issue first.** Describe the plan and we'll agree on how to split it into a series of small pull requests that each build and pass tests on their own.
+- Exceptions (for example, a large test fixture) only with a maintainer's agreement in the issue.
+
+## AI-assisted contributions
+
+You may use AI tools, under these conditions:
+
+- **Say so** in the pull request description, and name what the tool did (for example "tests drafted with an AI assistant, then reviewed and edited").
+- **You are the author.** You must understand every line and be able to explain and change it during review. "The tool wrote it" is not an answer to a review question.
+- **Same rules as everyone:** the size limit above, tests, and the licence/sign-off requirements. You confirm you have the right to submit the code.
+- Pull requests that look generated without review (code that doesn't fit the codebase, invented APIs, a PR description that doesn't match the diff, or no answers to review questions) are closed without detailed review.
+
+## How your contribution lands
+
+This GitHub repository is a mirror of our main development repository. When a pull request is merged here, we import it there with your authorship and sign-off preserved, and it comes back in the next sync. You don't need to do anything extra.
+
 ## Licensing of contributions
 
 Contributions are licensed under AGPL-3.0-or-later. New Go files should start
