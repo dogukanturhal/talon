@@ -17,10 +17,10 @@ import (
 
 func TestSecretNameForHost(t *testing.T) {
 	cases := map[string]string{
-		"git.example.com":      "talon-upstream-creds-git-example-com",
+		"github.com": "talon-upstream-creds-github-com",
 		"registry.example.com": "talon-upstream-creds-registry-example-com",
-		"single":               "talon-upstream-creds-single",
-		"a.b.c.d.e.f":          "talon-upstream-creds-a-b-c-d-e-f",
+		"single":              "talon-upstream-creds-single",
+		"a.b.c.d.e.f":         "talon-upstream-creds-a-b-c-d-e-f",
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestApply_NilRequest_NoPanic(t *testing.T) {
 func TestK8sSecretLoader_HitMiss(t *testing.T) {
 	cs := fake.NewClientset(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "talon-upstream-creds-git-example-com",
+			Name:      "talon-upstream-creds-github-com",
 			Namespace: "talon",
 		},
 		Data: map[string][]byte{
@@ -151,7 +151,7 @@ func TestK8sSecretLoader_HitMiss(t *testing.T) {
 	})
 	l := NewK8sSecretLoader(cs, "talon", 0)
 
-	c, err := l.Load(context.Background(), "git.example.com", "")
+	c, err := l.Load(context.Background(), "github.com", "")
 	if err != nil {
 		t.Fatalf("hit: err=%v", err)
 	}
@@ -270,7 +270,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 	cs := fake.NewClientset(
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "talon-upstream-creds-git-example-com",
+				Name:      "talon-upstream-creds-github-com",
 				Namespace: "talon",
 			},
 			Data: map[string][]byte{
@@ -280,7 +280,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "talon-upstream-creds-git-example-com-svc-svc-gitlab-bcl-receiver",
+				Name:      "talon-upstream-creds-github-com-svc-svc-gitlab-bcl-receiver",
 				Namespace: "talon",
 			},
 			Data: map[string][]byte{
@@ -293,7 +293,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 
 	// Per-client lookup returns the per-client Secret, NOT the
 	// host-default.
-	c, err := l.Load(context.Background(), "git.example.com", "svc-svc-gitlab-bcl-receiver")
+	c, err := l.Load(context.Background(), "github.com", "svc-svc-gitlab-bcl-receiver")
 	if err != nil {
 		t.Fatalf("per-client hit: err=%v", err)
 	}
@@ -303,7 +303,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 
 	// A DIFFERENT client_id falls back to the host-default (no
 	// per-client Secret named for it).
-	c, err = l.Load(context.Background(), "git.example.com", "svc-svc-argocd-repo-server")
+	c, err = l.Load(context.Background(), "github.com", "svc-svc-argocd-repo-server")
 	if err != nil {
 		t.Fatalf("fallback hit: err=%v", err)
 	}
@@ -313,7 +313,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 
 	// Empty clientID bypasses per-client lookup entirely — back-compat
 	// for Phase 4.5 callers that don't pass an identity.
-	c, err = l.Load(context.Background(), "git.example.com", "")
+	c, err = l.Load(context.Background(), "github.com", "")
 	if err != nil {
 		t.Fatalf("empty clientID: err=%v", err)
 	}
@@ -330,7 +330,7 @@ func TestK8sSecretLoader_PerClientHit(t *testing.T) {
 func TestK8sSecretLoader_PerClientMissFallsThroughToHostDefault(t *testing.T) {
 	cs := fake.NewClientset(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "talon-upstream-creds-git-example-com",
+			Name:      "talon-upstream-creds-github-com",
 			Namespace: "talon",
 		},
 		Data: map[string][]byte{
@@ -340,7 +340,7 @@ func TestK8sSecretLoader_PerClientMissFallsThroughToHostDefault(t *testing.T) {
 	})
 	l := NewK8sSecretLoader(cs, "talon", 0)
 
-	c, err := l.Load(context.Background(), "git.example.com", "svc-some-unconfigured-client")
+	c, err := l.Load(context.Background(), "github.com", "svc-some-unconfigured-client")
 	if err != nil {
 		t.Fatalf("fallback path: err=%v", err)
 	}
@@ -360,14 +360,14 @@ func TestK8sSecretLoader_PerClientShapeErrorDoesNotFallThrough(t *testing.T) {
 	cs := fake.NewClientset(
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "talon-upstream-creds-git-example-com",
+				Name:      "talon-upstream-creds-github-com",
 				Namespace: "talon",
 			},
 			Data: map[string][]byte{"password": []byte("default-token")},
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "talon-upstream-creds-git-example-com-svc-broken-client",
+				Name:      "talon-upstream-creds-github-com-svc-broken-client",
 				Namespace: "talon",
 			},
 			Data: map[string][]byte{"password": []byte("")}, // empty — operator misconfig
@@ -375,7 +375,7 @@ func TestK8sSecretLoader_PerClientShapeErrorDoesNotFallThrough(t *testing.T) {
 	)
 	l := NewK8sSecretLoader(cs, "talon", 0)
 
-	_, err := l.Load(context.Background(), "git.example.com", "svc-broken-client")
+	_, err := l.Load(context.Background(), "github.com", "svc-broken-client")
 	if err == nil {
 		t.Fatal("per-client shape error: want non-nil error, got nil (silently demoted to host-default)")
 	}
@@ -391,9 +391,9 @@ func TestSecretNameForHostClient(t *testing.T) {
 	cases := []struct {
 		host, clientID, want string
 	}{
-		{"git.example.com", "svc-svc-gitlab-bcl-receiver", "talon-upstream-creds-git-example-com-svc-svc-gitlab-bcl-receiver"},
+		{"github.com", "svc-svc-gitlab-bcl-receiver", "talon-upstream-creds-github-com-svc-svc-gitlab-bcl-receiver"},
 		{"registry.example.com", "svc-some-client", "talon-upstream-creds-registry-example-com-svc-some-client"},
-		{"git.example.com", "", ""},
+		{"github.com", "", ""},
 		{"x.y.z", "c", "talon-upstream-creds-x-y-z-c"},
 	}
 	for _, c := range cases {

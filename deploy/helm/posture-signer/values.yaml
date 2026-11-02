@@ -12,7 +12,7 @@ image:
   #
   # Production override in the GitOps repository env values pins this to
   # the tracked tag (image-updater writes back on every CI build).
-  repository: internal.example.com/talon/talon
+  repository: harbor.internal.example.com/talon/talon
   tag: "latest"
   pullPolicy: IfNotPresent
   pullSecrets: []
@@ -30,9 +30,9 @@ config:
   # Vault Transit key name (must match the TF resource).
   vaultKey: "posture-signer"
   # JWS iss claim. Must match TrustedIssuers in the Talon verifier config.
-  issuer: "https://posture.hexxlock.com"
+  issuer: "https://posture.example.com"
   # JWS aud claim. Must match ExpectedAudience in the Talon verifier config.
-  audience: "https://internal.example.com"
+  audience: "https://auth.internal.example.com"
   logLevel: "info"
   # CAEP transmitter (ADR 0043). When enabled, posture-signer emits a
   # device-compliance-change Security Event Token to Talon's CAEP receiver
@@ -43,10 +43,10 @@ config:
     enabled: false
     # Talon's CAEP receiver. /caep/events is host-scoped to the auth host,
     # so this MUST be the auth host URL (the HTTP client sends Host from it).
-    receiverURL: "https://internal.example.com/caep/events"
+    receiverURL: "https://auth.internal.example.com/caep/events"
     # subject.iss of the emitted events — the user-session OWNER Talon keys
     # revocation on (Falcon-ID), distinct from the SET issuer (posture-signer).
-    subjectIssuer: "https://id.hexxlock.com"
+    subjectIssuer: "https://id.example.com"
     # Optional SET aud override. Empty → the binary falls back to --audience.
     audience: ""
     # Compliance baseline (CSV). A device is "compliant" iff every listed key

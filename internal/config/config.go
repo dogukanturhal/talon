@@ -25,7 +25,7 @@ import (
 // reconciler-driven dynamic registration; the env var stays as a
 // break-glass for early-boot sanity routes.
 type ProtectedHost struct {
-	// Public host the IngressRoute matches on (e.g. internal.example.com).
+	// Public host the IngressRoute matches on (e.g. prometheus.internal.example.com).
 	Host string `json:"host"`
 	// Cluster-internal host:port to forward to.
 	Upstream string `json:"upstream"`
@@ -74,7 +74,7 @@ var upstreamRegexp = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*(\.svc
 // Config is the validated runtime configuration. Treat as immutable after
 // Load() returns.
 type Config struct {
-	// Public-facing URL Talon listens on (e.g. https://internal.example.com).
+	// Public-facing URL Talon listens on (e.g. https://auth.internal.example.com).
 	// Used to derive cookie domain anchors and OIDC redirect_uri.
 	ExternalURL *url.URL
 
@@ -157,11 +157,11 @@ type Config struct {
 	// list falls back to the legacy single-zone behaviour driven from
 	// CookieDomain (preserves existing deployments unchanged on
 	// upgrade). Multi-zone support added 2026-05-03 to enable Track 2
-	// Phase 7 migrations onto apps.hexxlock.com.
+	// Phase 7 migrations onto apps.example.com.
 	ProtectedHostSuffixes []string
 
 	// ClientlessHostSuffixes is the list of access-zone DNS suffixes (each
-	// starting with a dot, e.g. ".access.hexxlock.com") whose requests Talon
+	// starting with a dot, e.g. ".access.example.com") whose requests Talon
 	// tags as the agentless `channel=clientless` (ADR 0044). A session on one
 	// of these hosts carries no device cert, so it is projected into Rego as
 	// `input.session.channel="clientless"` and is HARD-DENIED on any route
@@ -173,8 +173,8 @@ type Config struct {
 
 	// AccessHelpURL is the remediation/enrollment landing URL shown on the
 	// branded access-denied page when a request is blocked for device-posture
-	// reasons (e.g. no HexxLock Access agent → no X-Talon-Posture). Points
-	// users at how to enroll / install + enable HexxLock Access. Empty = the
+	// reasons (e.g. no Access Agent agent → no X-Talon-Posture). Points
+	// users at how to enroll / install + enable Access Agent. Empty = the
 	// denied page shows the guidance text without a button.
 	// Env: TALON_ACCESS_HELP_URL
 	AccessHelpURL string
@@ -213,7 +213,7 @@ type Config struct {
 	// back to "frame-ancestors 'self' https:" — still safe but less
 	// restrictive. Loaded from TALON_FCL_FRAME_ANCESTOR; production
 	// value is the Falcon-ID public origin (e.g.
-	// "https://id.hexxlock.com").
+	// "https://id.example.com").
 	FrontchannelLogoutFrameAncestor string
 
 	// Listen ports.
@@ -303,7 +303,7 @@ type Config struct {
 	// transmitter's JWKS for SET signature verification. Default is
 	// `<CAEPTransmitterIssuer>/.well-known/jwks.json`. Override it when the
 	// issuer's public JWKS URL is unreachable from the receiver pod: the
-	// posture-signer transmitter's issuer (https://posture.hexxlock.com) is
+	// posture-signer transmitter's issuer (https://posture.example.com) is
 	// fronted by Envoy device-cert mTLS, so the receiver instead fetches the
 	// in-cluster Service JWKS
 	// (http://posture-signer.talon.svc.cluster.local:8080/.well-known/jwks.json).
@@ -327,7 +327,7 @@ type Config struct {
 	// (see ADR 0011); typical values point at a separate posture
 	// daemon URL, NOT at Falcon-ID.
 	//
-	// Env: TALON_POSTURE_TRUSTED_ISSUERS=https://posture.hexxlock.com
+	// Env: TALON_POSTURE_TRUSTED_ISSUERS=https://posture.example.com
 	PostureTrustedIssuers []string
 
 	// PostureAudience is the aud value Talon expects on posture JWS
@@ -348,7 +348,7 @@ type Config struct {
 	// Comma-separated. Lower-cased + trimmed on entry; port suffixes
 	// stripped at match time so list entries stay simple hostnames.
 	//
-	// Env: TALON_SKIP_COOP_HOSTS=internal.example.com,other.host
+	// Env: TALON_SKIP_COOP_HOSTS=vault.internal.example.com,other.host
 	SkipCOOPHosts []string
 
 	// PostureMaxAge bounds the (now - iat) freshness window on a
@@ -363,7 +363,7 @@ type Config struct {
 	// issuer's JWKS for X-Talon-Posture signature verification. Default is
 	// `<iss>/.well-known/jwks.json` for each trusted issuer. Override it when
 	// the issuer's public JWKS URL is unreachable from the Talon pod: the
-	// posture-signer's public issuer (https://posture.hexxlock.com) is fronted
+	// posture-signer's public issuer (https://posture.example.com) is fronted
 	// by Envoy device-cert mTLS, which Talon (no device cert) cannot complete —
 	// point this at the in-cluster Service JWKS
 	// (http://posture-signer.talon.svc.cluster.local:8080/.well-known/jwks.json).
@@ -391,6 +391,27 @@ type Config struct {
 	// Env: TALON_POSTURE_GRACE_CORP_SECONDS / TALON_POSTURE_GRACE_BYOD_SECONDS
 	PostureGraceCorp time.Duration
 	PostureGraceByod time.Duration
+
+	// Device-mTLS edge (admin access without WireGuard). Envoy terminates
+	// device-bound client-cert mTLS for the listed *.ops hosts and forwards the
+	// verified leaf via XFCC; Talon trusts XFCC only from the caller whose
+	// Linkerd identity (l5d-client-id) equals DeviceMTLSTrustedClientID, and
+	// strips it otherwise. Empty trusted id = feature off (XFCC stripped).
+	//
+	// Env: TALON_DEVICE_MTLS_TRUSTED_CLIENT_ID
+	//      TALON_DEVICE_MTLS_MODE=audit|enforce (default audit: log would_deny only)
+	//      TALON_DEVICE_MTLS_HOSTS=comma list of hosts the check applies to
+	//        (empty = all hosts)
+	DeviceMTLSTrustedClientID string
+	DeviceMTLSMode            string
+	DeviceMTLSHosts           []string
+	// DeviceMTLSListenAddr is a plaintext HTTP listener (e.g. ":8081") serving
+	// the SAME handler as the HTTPS port, reached only over the Linkerd mesh
+	// (a Linkerd Server + AuthorizationPolicy admit just the Envoy identity).
+	// Needed because Linkerd can only inject l5d-client-id into HTTP it can
+	// read, which it cannot do on the app-TLS :8443. Empty = disabled.
+	// Env: TALON_DEVICE_MTLS_LISTEN_ADDR
+	DeviceMTLSListenAddr string
 
 	// DefaultPolicyRego is the global ZTNA baseline OPA Rego module
 	// applied to EVERY protected route that does not declare its own
@@ -505,12 +526,12 @@ type Config struct {
 	SvctokenEnabled bool
 
 	// SvctokenJWKSURL — Falcon-ID's published key set. Defaults to
-	// https://id.hexxlock.com/.well-known/jwks.json. Only consulted
+	// https://id.example.com/.well-known/jwks.json. Only consulted
 	// when SvctokenEnabled is true.
 	SvctokenJWKSURL string
 
 	// SvctokenIssuer — Falcon-ID's issuer URL. Pinned on every
-	// service-token JWT. Defaults to https://id.hexxlock.com (matches
+	// service-token JWT. Defaults to https://id.example.com (matches
 	// the IssuerURL field — kept separate for forward-compat with
 	// deployments that proxy Falcon-ID under a different external URL
 	// than the issuer claim).
@@ -586,7 +607,7 @@ type SvctokenFederatedIssuer struct {
 // validation error encountered.
 func Load() (*Config, error) {
 	c := &Config{
-		IssuerURL:         getEnv("TALON_OIDC_ISSUER_URL", "https://id.hexxlock.com"),
+		IssuerURL:         getEnv("TALON_OIDC_ISSUER_URL", "https://id.example.com"),
 		InternalIssuerURL: getEnv("TALON_OIDC_INTERNAL_ISSUER_URL", ""),
 		OIDCClientID:      os.Getenv("TALON_OIDC_CLIENT_ID"),
 		OIDCClientSecret:  os.Getenv("TALON_OIDC_CLIENT_SECRET"),
@@ -650,8 +671,8 @@ func Load() (*Config, error) {
 	// platform's canonical Falcon-ID deployment so an operator only
 	// needs to flip SvctokenEnabled=true in 99% of cases.
 	c.SvctokenEnabled = getEnv("TALON_SVCTOKEN_ENABLED", "false") == "true"
-	c.SvctokenJWKSURL = getEnv("TALON_SVCTOKEN_JWKS_URL", "https://id.hexxlock.com/.well-known/jwks.json")
-	c.SvctokenIssuer = getEnv("TALON_SVCTOKEN_ISSUER", "https://id.hexxlock.com")
+	c.SvctokenJWKSURL = getEnv("TALON_SVCTOKEN_JWKS_URL", "https://id.example.com/.well-known/jwks.json")
+	c.SvctokenIssuer = getEnv("TALON_SVCTOKEN_ISSUER", "https://id.example.com")
 	if v, err := strconv.Atoi(getEnv("TALON_SVCTOKEN_REPLAY_CACHE_SIZE", "8192")); err == nil {
 		c.SvctokenReplayCacheSize = v
 	}
@@ -681,7 +702,7 @@ func Load() (*Config, error) {
 		c.SvctokenJWKSStaleThreshold = time.Hour
 	}
 
-	extURL, err := url.Parse(getEnv("TALON_EXTERNAL_URL", "https://internal.example.com"))
+	extURL, err := url.Parse(getEnv("TALON_EXTERNAL_URL", "https://auth.internal.example.com"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid TALON_EXTERNAL_URL: %w", err)
 	}
@@ -689,7 +710,7 @@ func Load() (*Config, error) {
 
 	c.CookieDomain = getEnv("TALON_COOKIE_DOMAIN", "")
 	if c.CookieDomain == "" {
-		// Default: leading-dot of ExternalURL host's parent (internal.example.com → internal.example.com)
+		// Default: leading-dot of ExternalURL host's parent (auth.internal.example.com → .internal.example.com)
 		host := extURL.Hostname()
 		if i := strings.IndexByte(host, '.'); i > 0 {
 			c.CookieDomain = "." + host[i+1:]
@@ -718,7 +739,7 @@ func Load() (*Config, error) {
 
 	// Protected-host suffix allow-list — drives both TalonRoute admission
 	// validation (controller) and rd-validation in the OIDC RP. Empty
-	// list = legacy single-zone fallback (TalonRoute uses "internal.example.com",
+	// list = legacy single-zone fallback (TalonRoute uses ".internal.example.com",
 	// rd-validation uses CookieDomain). Multi-zone support: comma-separated,
 	// each entry starts with a dot.
 	suffixesRaw := getEnv("TALON_PROTECTED_HOST_SUFFIXES", "")
@@ -793,6 +814,12 @@ func Load() (*Config, error) {
 	// 10m (corp) / 30m (byod). See config.PostureGraceCorp/Byod docs.
 	c.PostureGraceCorp = parseDurationSeconds("TALON_POSTURE_GRACE_CORP_SECONDS", 0)
 	c.PostureGraceByod = parseDurationSeconds("TALON_POSTURE_GRACE_BYOD_SECONDS", 0)
+	c.DeviceMTLSTrustedClientID = strings.TrimSpace(getEnv("TALON_DEVICE_MTLS_TRUSTED_CLIENT_ID", ""))
+	c.DeviceMTLSMode = strings.ToLower(strings.TrimSpace(getEnv("TALON_DEVICE_MTLS_MODE", "audit")))
+	c.DeviceMTLSListenAddr = strings.TrimSpace(getEnv("TALON_DEVICE_MTLS_LISTEN_ADDR", ""))
+	if v := strings.TrimSpace(getEnv("TALON_DEVICE_MTLS_HOSTS", "")); v != "" {
+		c.DeviceMTLSHosts = splitAndTrim(strings.ToLower(v), ",")
+	}
 	if c.PostureEnabled {
 		if len(c.PostureTrustedIssuers) == 0 {
 			return nil, errors.New("TALON_POSTURE_TRUSTED_ISSUERS is required when TALON_POSTURE_ENABLED=true")

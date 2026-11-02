@@ -56,7 +56,7 @@ Every row in the audit log is a single JSON object on one line
   // -- request (PDP events) --
   "request": {
     "method": "GET",
-    "host": "internal.example.com",
+    "host": "grafana.internal.example.com",
     "path": "/api/dashboards/...",
     "src_ip": "10.0.50.42",
     "user_agent": "...",
@@ -211,7 +211,7 @@ Phase 8.f schedules an external pentest in the rollout calendar
 
 | Surface | Tests |
 |---------|-------|
-| HexxLock Access agent | Posture probe spoofing; JWT replay; cert exfiltration |
+| Access Agent agent | Posture probe spoofing; JWT replay; cert exfiltration |
 | jess `/device-cert` | Attestation evidence forgery; CSR manipulation; mass-mint DoS |
 | Talon edge | mTLS bypass attempts; Rego policy fuzz; CAEP receiver tampering |
 | Falcon-ID | OIDC consent bypass; PKCE downgrade; WebAuthn phishing simulation |

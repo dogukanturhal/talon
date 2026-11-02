@@ -3,7 +3,7 @@
 Provisioned 2026-04-26. End-user flow:
 
 ```
-arrive at internal.example.com
+arrive at vault.internal.example.com
   → (silent) Talon perimeter authn (Falcon-ID OIDC + step-up MFA per
     talonroute-vault-ops.yaml mfaRequired:true)
   → land on Vault UI auth-method picker
@@ -26,13 +26,13 @@ INSERT INTO iam_oauth_clients
    require_pkce, require_consent, is_active, is_public)
 VALUES (
   gen_random_uuid(),
-  '00000000-0000-0000-0000-000000000002',  -- example-tenant tenant
+  '00000000-0000-0000-0000-000000000002',  -- exampletenant tenant
   'vault',
   '<SHA256-base64url(client_secret)>',
   'HashiCorp Vault OIDC',
   ARRAY[
-    'https://internal.example.com/ui/vault/auth/oidc/oidc/callback',
-    'https://internal.example.com/oidc/callback'
+    'https://vault.internal.example.com/ui/vault/auth/oidc/oidc/callback',
+    'https://vault.internal.example.com/oidc/callback'
   ],
   ARRAY['authorization_code','refresh_token'],
   ARRAY['code'],
@@ -65,7 +65,7 @@ vault auth enable oidc
 
 ```bash
 vault write auth/oidc/config \
-  oidc_discovery_url=https://id.hexxlock.com \
+  oidc_discovery_url=https://id.example.com \
   oidc_client_id=vault \
   oidc_client_secret=<secret> \
   default_role=platform-admin
@@ -77,7 +77,7 @@ vault write auth/oidc/config \
 vault write auth/oidc/role/platform-admin \
   bound_audiences=vault \
   user_claim=email \
-  allowed_redirect_uris=https://internal.example.com/ui/vault/auth/oidc/oidc/callback,https://internal.example.com/oidc/callback \
+  allowed_redirect_uris=https://vault.internal.example.com/ui/vault/auth/oidc/oidc/callback,https://vault.internal.example.com/oidc/callback \
   policies=admin \
   ttl=8h \
   max_ttl=24h \
@@ -99,12 +99,12 @@ vault read auth/oidc/role/platform-admin
 # 4. Auth URL generation works
 vault write auth/oidc/oidc/auth_url \
   role=platform-admin \
-  redirect_uri=https://internal.example.com/ui/vault/auth/oidc/oidc/callback
+  redirect_uri=https://vault.internal.example.com/ui/vault/auth/oidc/oidc/callback
 # Expected: returns auth_url with client_id=vault, code_challenge,
 # scope=openid+profile+email+groups, redirect_uri matching the role.
 ```
 
-End-to-end via browser: see `talon/e2e/playwright/tests/vault-deep-login.spec.ts`.
+End-to-end browser tests are not published.
 
 ## Tighten / follow-up
 

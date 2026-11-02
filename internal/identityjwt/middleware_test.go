@@ -27,7 +27,7 @@ func endToEndTestRig(t *testing.T, opts ...MiddlewareOptions) (
 	capturedClaims **IdentityClaims,
 ) {
 	t.Helper()
-	s, err := NewSignerFromPEM(genTestKey(t), "https://internal.example.com")
+	s, err := NewSignerFromPEM(genTestKey(t), "https://auth.internal.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func endToEndTestRig(t *testing.T, opts ...MiddlewareOptions) (
 
 	v, err := NewVerifier(VerifierConfig{
 		JWKSURL:          jwksURL,
-		ExpectedIssuer:   "https://internal.example.com",
+		ExpectedIssuer:   "https://auth.internal.example.com",
 		ExpectedAudience: "registry.example.com",
 	})
 	if err != nil {
@@ -136,7 +136,7 @@ func TestMiddleware_AllowMissingFallsThrough(t *testing.T) {
 func TestMiddleware_RejectsBadAudience_WithReasonCode(t *testing.T) {
 	signer, _, mounted, _ := endToEndTestRig(t)
 	// Mint for the wrong audience.
-	token, _ := signer.Sign(&session.Blob{Sub: "u"}, "internal.example.com")
+	token, _ := signer.Sign(&session.Blob{Sub: "u"}, "argocd.internal.example.com")
 	req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
 	req.Header.Set(HeaderName, token)
 	rr := httptest.NewRecorder()

@@ -39,7 +39,7 @@ func setupRig(t *testing.T) *rig {
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	})
-	signer, err := identityjwt.NewSignerFromPEM(pemBytes, "https://auth.ops.hexxlock.test")
+	signer, err := identityjwt.NewSignerFromPEM(pemBytes, "https://auth.ops.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,8 +51,8 @@ func setupRig(t *testing.T) *rig {
 
 	verifier, err := identityjwt.NewVerifier(identityjwt.VerifierConfig{
 		JWKSURL:          jwksSrv.URL + "/.well-known/jwks.json",
-		ExpectedIssuer:   "https://auth.ops.hexxlock.test",
-		ExpectedAudience: "myservice.ops.hexxlock.test",
+		ExpectedIssuer:   "https://auth.ops.example.test",
+		ExpectedAudience: "myservice.ops.example.test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestExample_API_WhoamiSurfacesClaims(t *testing.T) {
 	defer r.close()
 	// Mint a token shaped like a real Talon JWT.
 	blob := mustBlob(t)
-	token, err := r.signer.Sign(blob, "myservice.ops.hexxlock.test")
+	token, err := r.signer.Sign(blob, "myservice.ops.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestExample_API_WhoamiSurfacesClaims(t *testing.T) {
 	if got["sub"] != "u-1" {
 		t.Errorf("sub = %v, want u-1", got["sub"])
 	}
-	if got["email"] != "user@hexxlock.test" {
+	if got["email"] != "user@example.test" {
 		t.Errorf("email = %v", got["email"])
 	}
 	if got["jti"] == "" || got["jti"] == nil {
@@ -191,7 +191,7 @@ func TestExample_API_RejectsWrongAudience(t *testing.T) {
 	r := setupRig(t)
 	defer r.close()
 	// Mint for a different audience — must reject.
-	tok, _ := r.signer.Sign(mustBlob(t), "OTHER.ops.hexxlock.test")
+	tok, _ := r.signer.Sign(mustBlob(t), "OTHER.ops.example.test")
 	resp := r.call(t, http.MethodGet, "/api/whoami", tok, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {

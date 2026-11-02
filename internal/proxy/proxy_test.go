@@ -39,7 +39,7 @@ import (
 // stamped. Upstream consumers (notably @hexxlock/falcon-id-client/nextjs
 // which short-circuits on X-Talon-User to skip the redirect-to-/login
 // dance) saw zero X-Talon-* headers and bounced authenticated users to
-// accounts.hexxlock.com. Talon's audit log still read decision=allow
+// accounts.example.com. Talon's audit log still read decision=allow
 // because it reads from the session blob, not the outbound headers —
 // masking the breakage.
 //

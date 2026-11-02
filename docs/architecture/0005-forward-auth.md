@@ -2,7 +2,7 @@
 
 - **Status:** Stub (filling during Gap 7 — week 1)
 - **Date:** 2026-04-27 (stub)
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Refines:** ADR 0001 §11 ("Forward-auth endpoint shape for APISIX
   integration (Phase 4) — deferred to ADR 0004"; renumbered to 0005)
 - **Related:** `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md` Gap 7;
@@ -14,13 +14,13 @@
 ## 1. Status
 
 Stub. Implementation lands in Gap 7, week 1. Pilot host:
-`accounts.hexxlock.com/admin` (locked 2026-04-27 per boot-prompt
+`accounts.example.com/admin` (locked 2026-04-27 per boot-prompt
 recommendation — low-traffic existing OIDC RP).
 
 ## 2. Context
 
 ADR 0001 §3 defined Talon as an IAP for the admin tier
-(`internal.example.com`). Customer-tier APIs sit behind APISIX (memory:
+(`*.internal.example.com`). Customer-tier APIs sit behind APISIX (memory:
 internal engineering notes — APISIX is the strategic API gateway). To
 extend Talon as the platform's single IAP-style PEP for customer-tier
 routes that opt in, we need a forward-auth endpoint APISIX can call
@@ -35,8 +35,8 @@ documented here to lock the headers, error semantics, and cookie scope.
 
 > **TODO during Gap 7 implementation. Outline of locked decisions:**
 
-1. **Endpoint**: `GET /auth/verify` on `internal.example.com`
-   (admin tier) AND `auth.hexxlock.com` (customer tier — separate
+1. **Endpoint**: `GET /auth/verify` on `auth.internal.example.com`
+   (admin tier) AND `auth.example.com` (customer tier — separate
    cookie scope). Endpoint behaviour identical; cookie domain differs.
 2. **Request shape**: APISIX forwards the original request's
    `Cookie:` header verbatim. `X-Forwarded-Host` carries the host the
@@ -63,12 +63,12 @@ documented here to lock the headers, error semantics, and cookie scope.
    has a configurable `request_method=GET` and `keepalive=true`; pin
    timeout at 1 s.
 6. **Cookie scope isolation**:
-   - Admin tier cookie: `talon_session_admin` on `Domain=internal.example.com`
-   - Customer tier cookie: `talon_session_customer` on `Domain=.hexxlock.com`
+   - Admin tier cookie: `talon_session_admin` on `Domain=.internal.example.com`
+   - Customer tier cookie: `talon_session_customer` on `Domain=.example.com`
    - Customer-tier cookie **cannot** read admin-tier hosts (browser
      cookie-jar isolation). Test asserted in
-     `e2e/playwright/tests/forward-auth-cookie-isolation.spec.ts`.
-7. **Pilot host**: `accounts.hexxlock.com/admin` — existing customer-tier
+     an unpublished e2e test.
+7. **Pilot host**: `accounts.example.com/admin` — existing customer-tier
    OIDC RP, low-traffic admin section. If regression, blast radius
    contained. Migration to broader customer tier follows pilot soak.
 8. **Authentication of APISIX → Talon link**: Linkerd mTLS.

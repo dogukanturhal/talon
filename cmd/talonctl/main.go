@@ -15,8 +15,8 @@
 // per-developer YAML file.
 //
 //	talonctl login
-//	talonctl token   --host internal.example.com
-//	talonctl npm      --host internal.example.com --scope @hexxlock
+//	talonctl token   --host npm.internal.example.com
+//	talonctl npm      --host npm.internal.example.com --scope @hexxlock
 //	talonctl logout
 //
 // See internal/clilogin for why loopback PKCE (not device flow), and why
@@ -64,7 +64,7 @@ Usage:
   talonctl version                                  print build metadata
 
 Common flags:
-  --issuer    OIDC issuer            (default https://id.hexxlock.com)
+  --issuer    OIDC issuer            (default https://id.example.com)
   --client-id public client id       (default svc-talon-cli)
 `
 
@@ -103,13 +103,13 @@ func run(ctx context.Context, sub string, args []string) error {
 	fs := flag.NewFlagSet("talonctl "+sub, flag.ExitOnError)
 	issuer := fs.String("issuer", clilogin.DefaultIssuer, "OIDC issuer to authenticate against")
 	clientID := fs.String("client-id", clilogin.DefaultClientID, "public (no-secret) OAuth client id")
-	host := fs.String("host", "", "Talon-fronted host the token is for, e.g. internal.example.com")
+	host := fs.String("host", "", "Talon-fronted host the token is for, e.g. npm.internal.example.com")
 	scope := fs.String("scope", "@hexxlock", "npm package scope to point at the registry")
 	npmrc := fs.String("npmrc", "", "path to .npmrc (default ~/.npmrc)")
 	// Per-host Talon scopes must be granted at login — a refresh
 	// cannot widen scope (RFC 6749 §6), so naming the hosts later is
 	// too late. Comma-separated.
-	hosts := fs.String("hosts", "", "comma-separated Talon hosts this login grants (default internal.example.com)")
+	hosts := fs.String("hosts", "", "comma-separated Talon hosts this login grants (default npm.internal.example.com)")
 	// Read-only by default. `npm install` is a GET (talon:<host>:read);
 	// `npm publish` is a PUT (talon:<host>:write). Most developers only
 	// consume, and a consume-only credential cannot damage the registry.
@@ -186,13 +186,13 @@ func doLogin(ctx context.Context, issuer, clientID string, hosts []string, publi
 		// IdP will not add scope to an existing one on refresh.
 		fmt.Println("To publish packages, re-run: talonctl login --publish")
 	}
-	fmt.Println("Next: talonctl npm --host internal.example.com")
+	fmt.Println("Next: talonctl npm --host npm.internal.example.com")
 	return nil
 }
 
 func mint(ctx context.Context, issuer, clientID, host string, store *clilogin.Store) (*oauth2.Token, error) {
 	if host == "" {
-		return nil, errors.New("--host is required (e.g. --host internal.example.com)")
+		return nil, errors.New("--host is required (e.g. --host npm.internal.example.com)")
 	}
 	saved, err := store.Load()
 	if err != nil {

@@ -11,24 +11,24 @@ import (
 // TestIsSafeReturnURL_ClientlessZone exercises ADR 0044 Phase 1 — the
 // open-redirect validator must accept return URLs into a configured
 // clientless access zone, otherwise the OIDC redirect back to
-// `<app>.access.hexxlock.com` after sign-in would be rejected and the
+// `<app>.access.example.com` after sign-in would be rejected and the
 // clientless auth flow could never complete. Admin zones keep working and
 // suffix-collision / non-https targets stay rejected.
 func TestIsSafeReturnURL_ClientlessZone(t *testing.T) {
 	t.Parallel()
 	r := &RP{cfg: &config.Config{
-		ProtectedHostSuffixes:  []string{"internal.example.com"},
-		ClientlessHostSuffixes: []string{".access.hexxlock.com"},
+		ProtectedHostSuffixes:  []string{".internal.example.com"},
+		ClientlessHostSuffixes: []string{".access.example.com"},
 	}}
 	cases := []struct {
 		rd   string
 		want bool
 	}{
-		{"https://argocd.access.hexxlock.com/applications", true}, // access zone
-		{"https://internal.example.com/graph", true},       // admin zone
-		{"https://evilaccess.hexxlock.com/", false},               // suffix-collision (no dotted boundary)
-		{"https://evil.com/access.hexxlock.com", false},           // foreign host
-		{"http://argocd.access.hexxlock.com/", false},             // non-https rejected
+		{"https://argocd.access.example.com/applications", true}, // access zone
+		{"https://prometheus.internal.example.com/graph", true},       // admin zone
+		{"https://evilaccess.example.com/", false},               // suffix-collision (no dotted boundary)
+		{"https://evil.com/access.example.com", false},           // foreign host
+		{"http://argocd.access.example.com/", false},             // non-https rejected
 		{"::not a url", false},                                    // unparseable
 	}
 	for _, c := range cases {
@@ -44,11 +44,11 @@ func TestIsSafeReturnURL_ClientlessZone(t *testing.T) {
 // against accidentally widening the redirect allow-list on upgrade.
 func TestIsSafeReturnURL_ClientlessDisabledFallback(t *testing.T) {
 	t.Parallel()
-	r := &RP{cfg: &config.Config{CookieDomain: "internal.example.com"}}
-	if r.isSafeReturnURL("https://argocd.access.hexxlock.com/") {
+	r := &RP{cfg: &config.Config{CookieDomain: ".internal.example.com"}}
+	if r.isSafeReturnURL("https://argocd.access.example.com/") {
 		t.Error("access-zone rd must be rejected when clientless tier disabled and no matching cookie domain")
 	}
-	if !r.isSafeReturnURL("https://internal.example.com/") {
+	if !r.isSafeReturnURL("https://prometheus.internal.example.com/") {
 		t.Error("cookie-domain-matching rd must be accepted in the legacy fallback")
 	}
 }

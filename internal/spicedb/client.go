@@ -15,12 +15,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/authzed/authzed-go/v1"
 	"github.com/authzed/grpcutil"
 	v1pb "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -28,7 +29,7 @@ import (
 // (user/group/talon_route — ADR 0001 §5.b). It is READ-ONLY: it is
 // NEVER passed to WriteSchema.
 //
-// an internal incident root-caused a production incident (2026-09-07/08) to THREE
+// t-582 root-caused a production incident (2026-09-07/08) to THREE
 // independent WriteSchema callers racing against the same global
 // SpiceDB instance — this package's own EnsureSchema (called from
 // every pod's startup via go:embed), Talon's separate PreSync hook,
@@ -39,7 +40,7 @@ import (
 // schema back to this file's original 3-definition copy, 1h29m45s
 // after the correct schema had landed, with zero ArgoCD sync or CI
 // pipeline activity involved. Full incident record on board row
-// an internal incident.
+// t-582.
 //
 // Fix: exactly one writer for this global resource. Talon's PreSync
 // hook (deploy/helm/talon/templates/spicedb-seed-job.yaml) is deleted
@@ -51,7 +52,7 @@ import (
 // source of truth for EnsureSchema's startup verification below and
 // MUST be kept in sync with the canonical copy at
 // hexxlock/falcon-id.git:deploy/helm/spicedb-schema/files/spicedb.zed
-// (a CI drift check between the two copies is a natural an internal incident
+// (a CI drift check between the two copies is a natural t-582
 // follow-up, not yet implemented).
 //
 //go:embed schema.zed
@@ -90,14 +91,32 @@ func hasDefinition(liveSchema, name string) bool {
 
 // Client wraps an authzed-go *Client with helpers and config.
 type Client struct {
-	c        *authzed.Client
+	perms    v1pb.PermissionsServiceClient
+	schema   v1pb.SchemaServiceClient
+	conn     *grpc.ClientConn
 	endpoint string
+
+	stopKeep  chan struct{}
+	closeOnce sync.Once
 }
 
+// connWait bounds how long CheckPermission waits for a non-READY
+// connection to come back before it applies the RPC deadline.
+const connWait = 1500 * time.Millisecond
+
+// keepaliveTick is how often the background loop nudges an IDLE conn.
+const keepaliveTick = 30 * time.Second
+
 // NewClient connects to spicedb at endpoint (host:port). Uses TLS with
-// InsecureSkipVerify (the in-cluster cert is signed by example-tenant
+// InsecureSkipVerify (the in-cluster cert is signed by exampletenant
 // CA which talon's cert chain doesn't yet load; Linkerd handles wire
 // mTLS underneath). PSK is sent via gRPC bearer-token auth.
+//
+// The conn is built here (not via authzed.NewClient) so the idle
+// timeout can be disabled: with gRPC's default 30-minute idle timeout
+// the first check after a quiet period had to redial (DNS + TLS +
+// Linkerd) inside its 200ms deadline and failed closed. We also dial
+// eagerly and keep the conn warm.
 func NewClient(endpoint, psk string) (*Client, error) {
 	if endpoint == "" {
 		return nil, errors.New("spicedb endpoint is required")
@@ -109,18 +128,91 @@ func NewClient(endpoint, psk string) (*Client, error) {
 		InsecureSkipVerify: true, //nolint:gosec // in-cluster cert; Linkerd mTLS overlays
 		MinVersion:         tls.VersionTLS12,
 	}
-	c, err := authzed.NewClient(endpoint,
+	conn, err := grpc.NewClient(endpoint,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
 		grpcutil.WithBearerToken(psk),
+		grpc.WithIdleTimeout(0),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("spicedb dial %s: %w", endpoint, err)
 	}
-	return &Client{c: c, endpoint: endpoint}, nil
+	return newClientFromConn(conn, endpoint), nil
+}
+
+func newClientFromConn(conn *grpc.ClientConn, endpoint string) *Client {
+	c := &Client{
+		perms:    v1pb.NewPermissionsServiceClient(conn),
+		schema:   v1pb.NewSchemaServiceClient(conn),
+		conn:     conn,
+		endpoint: endpoint,
+		stopKeep: make(chan struct{}),
+	}
+	conn.Connect()
+	go c.keepWarm()
+	return c
+}
+
+// keepWarm re-triggers a connect if the conn ever falls back to IDLE.
+func (c *Client) keepWarm() {
+	t := time.NewTicker(keepaliveTick)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.stopKeep:
+			return
+		case <-t.C:
+			if c.conn.GetState() == connectivity.Idle {
+				c.conn.Connect()
+			}
+		}
+	}
+}
+
+// waitReady kicks the conn and waits (bounded by ctx and connWait) for
+// READY. Best effort: on timeout the RPC proceeds and reports its own error.
+func (c *Client) waitReady(ctx context.Context) {
+	st := c.conn.GetState()
+	if st == connectivity.Ready {
+		return
+	}
+	wctx, cancel := context.WithTimeout(ctx, connWait)
+	defer cancel()
+	for st != connectivity.Ready {
+		if st == connectivity.Idle {
+			c.conn.Connect()
+		}
+		if !c.conn.WaitForStateChange(wctx, st) {
+			return
+		}
+		st = c.conn.GetState()
+	}
 }
 
 // Close releases the underlying gRPC connection.
-func (c *Client) Close() error { return c.c.Close() }
+func (c *Client) Close() error {
+	c.closeOnce.Do(func() { close(c.stopKeep) })
+	return c.conn.Close()
+}
+
+// GroupObjectID encodes a group/role name into a SpiceDB ObjectId.
+// Characters outside the ObjectId alphabet (e.g. the ':' in
+// "accounting:manager") are escaped as '|' + two hex digits; ids that
+// are already valid pass through unchanged, so existing relationships
+// keep their ids.
+func GroupObjectID(g string) string {
+	var b strings.Builder
+	for i := 0; i < len(g); i++ {
+		ch := g[i]
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9',
+			ch == '/', ch == '_', ch == '|', ch == '-', ch == '=', ch == '+':
+			b.WriteByte(ch)
+		default:
+			fmt.Fprintf(&b, "|%02x", ch)
+		}
+	}
+	return b.String()
+}
 
 // EnsureSchema verifies that every definition Talon requires (per the
 // embedded schemaZed) is present in the LIVE cluster SpiceDB schema.
@@ -139,7 +231,7 @@ func (c *Client) Close() error { return c.c.Close() }
 // Returns the ZedToken from the ReadSchema response's ReadAt on
 // success (parity with the old WriteSchema-token log line).
 func (c *Client) EnsureSchema(ctx context.Context) (string, error) {
-	resp, err := c.c.ReadSchema(ctx, &v1pb.ReadSchemaRequest{})
+	resp, err := c.schema.ReadSchema(ctx, &v1pb.ReadSchemaRequest{})
 	if err != nil {
 		return "", fmt.Errorf("spicedb ReadSchema: %w", err)
 	}
@@ -181,10 +273,13 @@ func HostObjectID(host string) string {
 // the configured deadline; returns (false, err) on transport / timeout
 // failure (caller fail-closes per ADR 0001 §7.b).
 func (c *Client) CheckPermission(ctx context.Context, req CheckRequest) (bool, error) {
+	// Cold/idle conn: reconnect first so the dial cost doesn't eat the
+	// RPC deadline below.
+	c.waitReady(ctx)
 	cctx, cancel := context.WithTimeout(ctx, req.Deadline)
 	defer cancel()
 
-	resp, err := c.c.CheckPermission(cctx, &v1pb.CheckPermissionRequest{
+	resp, err := c.perms.CheckPermission(cctx, &v1pb.CheckPermissionRequest{
 		Resource: &v1pb.ObjectReference{
 			ObjectType: "talon_route",
 			ObjectId:   HostObjectID(req.Host),
@@ -207,7 +302,7 @@ func (c *Client) CheckPermission(ctx context.Context, req CheckRequest) (bool, e
 // SpiceDB's CheckPermissionRequest; Deadline defaults to 200ms per ADR
 // 0001 §7.b if zero.
 type CheckRequest struct {
-	Host       string        // public host, e.g. internal.example.com
+	Host       string        // public host, e.g. prometheus.internal.example.com
 	Subject    string        // Falcon-ID `sub` claim (UUID)
 	Permission string        // viewer | editor | admin | access (per schema)
 	Deadline   time.Duration // 200ms typical; 0 = use 200ms default
@@ -248,7 +343,7 @@ func (c *Client) WriteRouteRelationships(ctx context.Context, host string, allow
 				Resource: &v1pb.ObjectReference{ObjectType: "talon_route", ObjectId: hostID},
 				Relation: permission,
 				Subject: &v1pb.SubjectReference{
-					Object:           &v1pb.ObjectReference{ObjectType: "group", ObjectId: g},
+					Object:           &v1pb.ObjectReference{ObjectType: "group", ObjectId: GroupObjectID(g)},
 					OptionalRelation: "member",
 				},
 			},
@@ -268,7 +363,7 @@ func (c *Client) WriteRouteRelationships(ctx context.Context, host string, allow
 		return nil
 	}
 
-	_, err := c.c.WriteRelationships(ctx, &v1pb.WriteRelationshipsRequest{Updates: updates})
+	_, err := c.perms.WriteRelationships(ctx, &v1pb.WriteRelationshipsRequest{Updates: updates})
 	if err != nil {
 		return fmt.Errorf("spicedb WriteRelationships: %w", err)
 	}
@@ -290,7 +385,7 @@ func (c *Client) WriteRouteRelationships(ctx context.Context, host string, allow
 // Without this call the cluster is misseeded and every protected
 // route returns reason=no_permission even though the user has the
 // right role on their JWT — the exact 2026-05-08 production outage
-// the operator hit on internal.example.com.
+// the operator hit on argocd.internal.example.com.
 //
 // Idempotent (TOUCH = upsert) and bounded in size (typical user has
 // ≤8 roles), so safe to call from the per-login hot path. Callers
@@ -311,7 +406,7 @@ func (c *Client) WriteUserGroupMemberships(ctx context.Context, sub string, role
 		updates = append(updates, &v1pb.RelationshipUpdate{
 			Operation: v1pb.RelationshipUpdate_OPERATION_TOUCH,
 			Relationship: &v1pb.Relationship{
-				Resource: &v1pb.ObjectReference{ObjectType: "group", ObjectId: role},
+				Resource: &v1pb.ObjectReference{ObjectType: "group", ObjectId: GroupObjectID(role)},
 				Relation: "member",
 				Subject:  &v1pb.SubjectReference{Object: &v1pb.ObjectReference{ObjectType: "user", ObjectId: sub}},
 			},
@@ -320,7 +415,7 @@ func (c *Client) WriteUserGroupMemberships(ctx context.Context, sub string, role
 	if len(updates) == 0 {
 		return nil
 	}
-	_, err := c.c.WriteRelationships(ctx, &v1pb.WriteRelationshipsRequest{Updates: updates})
+	_, err := c.perms.WriteRelationships(ctx, &v1pb.WriteRelationshipsRequest{Updates: updates})
 	if err != nil {
 		return fmt.Errorf("spicedb WriteRelationships (group memberships): %w", err)
 	}
@@ -338,7 +433,7 @@ func (c *Client) DeleteUserGroupMemberships(ctx context.Context, sub string) err
 	if sub == "" {
 		return nil
 	}
-	_, err := c.c.DeleteRelationships(ctx, &v1pb.DeleteRelationshipsRequest{
+	_, err := c.perms.DeleteRelationships(ctx, &v1pb.DeleteRelationshipsRequest{
 		RelationshipFilter: &v1pb.RelationshipFilter{
 			ResourceType:     "group",
 			OptionalRelation: "member",
@@ -358,7 +453,7 @@ func (c *Client) DeleteUserGroupMemberships(ctx context.Context, sub string) err
 // given route's resource id. Called by the reconciler on TalonRoute
 // deletion.
 func (c *Client) DeleteRouteRelationships(ctx context.Context, host string) error {
-	_, err := c.c.DeleteRelationships(ctx, &v1pb.DeleteRelationshipsRequest{
+	_, err := c.perms.DeleteRelationships(ctx, &v1pb.DeleteRelationshipsRequest{
 		RelationshipFilter: &v1pb.RelationshipFilter{
 			ResourceType:       "talon_route",
 			OptionalResourceId: HostObjectID(host),

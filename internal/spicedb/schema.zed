@@ -1,6 +1,6 @@
 // Talon's required SpiceDB definitions (ADR 0001 §5.b) — READ-ONLY.
 //
-// an internal incident (2026-09-07/08): this file is NEVER passed to WriteSchema.
+// t-582 (2026-09-07/08): this file is NEVER passed to WriteSchema.
 // SpiceDB's WriteSchema RPC REPLACES the entire schema rather than
 // merging it; this file, Talon's now-deleted PreSync hook, and
 // falcon-id's now-deleted PostSync hook were three independent
@@ -11,7 +11,7 @@
 // internal/spicedb/client.go's old EnsureSchema) reverted a live
 // 45-definition schema back down to this file's 3 definitions —
 // with zero ArgoCD sync or CI pipeline involved. Full incident
-// record on board row an internal incident.
+// record on board row t-582.
 //
 // The dedicated `spicedb-schema` Argo CD Application (chart in
 // hexxlock/falcon-id.git:deploy/helm/spicedb-schema, synced
@@ -21,7 +21,7 @@
 // solely so internal/spicedb/client.go's EnsureSchema can verify at
 // startup that the live schema still contains what Talon requires —
 // it must be kept in sync with (a subset of) that canonical copy;
-// a CI drift check between the two is a natural an internal incident follow-up, not
+// a CI drift check between the two is a natural t-582 follow-up, not
 // yet implemented.
 definition user {}
 

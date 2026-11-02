@@ -34,12 +34,12 @@ type Signer interface {
 // TransmitterConfig configures who the SETs are from/about/to.
 type TransmitterConfig struct {
 	// SetIssuer is the SET-envelope `iss` — the TRANSMITTER identity
-	// (posture-signer, e.g. https://posture.hexxlock.com). The receiver
+	// (posture-signer, e.g. https://posture.example.com). The receiver
 	// verifies the signature against this issuer's JWKS.
 	SetIssuer string
 	// SubjectIssuer is the event `subject.iss` — the user-session OWNER
 	// the receiver keys RevokeBySubject on (Falcon-ID, e.g.
-	// https://id.hexxlock.com). Distinct from SetIssuer on purpose.
+	// https://id.example.com). Distinct from SetIssuer on purpose.
 	SubjectIssuer string
 	// Audience is the SET `aud` (the receiver's auth host).
 	Audience string

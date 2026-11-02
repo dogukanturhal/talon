@@ -58,6 +58,20 @@ type RegoInput struct {
 	// to layer device-trust on top of the route's basic posture
 	// requirement (declared via TalonRoute.spec.requirePosture).
 	Posture *RegoInputPosture `json:"posture,omitempty"`
+	// DeviceMTLS is the device identity from the public-edge client cert
+	// (Envoy XFCC, trusted only from the Envoy service account). Nil when the
+	// device-mTLS edge is not configured; otherwise always set, with
+	// present=false when no trusted cert accompanied the request.
+	DeviceMTLS *RegoInputDeviceMTLS `json:"device_mtls,omitempty"`
+}
+
+// RegoInputDeviceMTLS mirrors devicemtls.Identity for Rego.
+type RegoInputDeviceMTLS struct {
+	Present  bool   `json:"present"`
+	Valid    bool   `json:"valid"`
+	DeviceID string `json:"device_id"`
+	Kind     string `json:"kind"` // "browser" | "device"
+	Channel  string `json:"channel"`
 }
 
 // RegoInputUser is the subset of session.Blob the policy can read.

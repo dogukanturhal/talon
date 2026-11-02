@@ -1,6 +1,6 @@
 # Talon Helm chart — Phase 0 skeleton
 #
-# Deploys the OIDC-RP reverse proxy on internal.example.com plus per-host
+# Deploys the OIDC-RP reverse proxy on auth.internal.example.com plus per-host
 # IngressRoutes for protected admin services. Phase 0 ships replicas:0 so the
 # chart can sync via Argo before the Phase 1 binary lands; bump replicaCount
 # once a real image tag is in Harbor.
@@ -15,7 +15,7 @@ global:
 # Image
 # ---------------------------------------------------------------------------
 image:
-  repository: internal.example.com/talon/talon
+  repository: harbor.internal.example.com/talon/talon
   tag: "0.0.0-placeholder"   # CI bump-manifest replaces with commit SHA
   pullPolicy: IfNotPresent
   pullSecrets:
@@ -87,11 +87,11 @@ resources:
 # Talon-specific runtime config. Injected into the container as env.
 config:
   # External listening URL (browser-facing).
-  externalUrl: https://internal.example.com
+  externalUrl: https://auth.internal.example.com
   # Cookie domain — see ADR 0002 §3.1; must be a suffix of externalUrl host.
-  cookieDomain: internal.example.com
+  cookieDomain: .internal.example.com
   # OIDC issuer (canonical Falcon-ID).
-  issuerUrl: https://id.hexxlock.com
+  issuerUrl: https://id.example.com
   # Internal-cluster issuer URL (used for /oauth/token, /oauth/userinfo, JWKS)
   # to avoid the customer-tier traefik hop. JWT iss claim still asserts the
   # public issuerUrl.
@@ -132,14 +132,14 @@ config:
   # silently remove an authorisation gate.
   roleGateMode: enforce
   # Comma-separated list of DNS suffixes that TalonRoute spec.host
-  # values must end with. Default "internal.example.com" preserves
+  # values must end with. Default ".internal.example.com" preserves
   # the historical single-zone constraint. Operators add new admin
-  # subzones (e.g. ".apps.hexxlock.com" for Track 2 subzone migration)
+  # subzones (e.g. ".apps.example.com" for Track 2 subzone migration)
   # by extending this list — no code change required. Must include
   # the leading dot to prevent suffix-collision attacks (e.g.
-  # "evil-internal.example.com" must NOT match "internal.example.com").
-  # Empty / unset behaves as "internal.example.com".
-  protectedHostSuffixes: "internal.example.com"
+  # "evil-internal.example.com" must NOT match ".internal.example.com").
+  # Empty / unset behaves as ".internal.example.com".
+  protectedHostSuffixes: ".internal.example.com"
   # Comma-separated list of access-zone DNS suffixes for the agentless
   # clientless tier (ADR 0044). A TalonRoute whose spec.host ends with one
   # of these is admitted on equal footing with protectedHostSuffixes, and
@@ -147,7 +147,7 @@ config:
   # AAL cap + clientlessMaxTTL apply. Empty / unset = clientless tier
   # disabled (no access-zone hosts admitted) — existing deployments are
   # unchanged on upgrade. Must include the leading dot (e.g.
-  # ".access.hexxlock.com") to prevent suffix-collision attacks.
+  # ".access.example.com") to prevent suffix-collision attacks.
   clientlessHostSuffixes: ""
   # Continuous verification interval (ADR 0001 §6, Phase 4).
   continuousVerifyMinutes: 15
@@ -164,9 +164,9 @@ config:
     enabled: false
     # iss claim Talon requires on every inbound SET (the transmitter
     # identity). For the posture-signer transmitter this is its JWS issuer.
-    transmitterIssuer: "https://posture.hexxlock.com"
+    transmitterIssuer: "https://posture.example.com"
     # aud Talon requires on every inbound SET (this receiver's endpoint).
-    audience: "https://internal.example.com/caep/events"
+    audience: "https://auth.internal.example.com/caep/events"
     # Optional JWKS fetch override. Default derives <transmitterIssuer>/
     # .well-known/jwks.json, but posture-signer's issuer is Envoy
     # device-cert-mTLS-gated and unreachable from this pod, so point the
@@ -189,11 +189,26 @@ config:
     # Freshness budget (now - iat). Default 1h matches the JWS TTL.
     maxAgeSeconds: 3600
     # Optional JWKS URL override for signature verification. The posture
-    # issuer's public JWKS (https://posture.hexxlock.com/.well-known/jwks.json)
+    # issuer's public JWKS (https://posture.example.com/.well-known/jwks.json)
     # is Envoy device-cert-mTLS-gated → unreachable from the Talon pod, so set
     # this to the in-cluster posture-signer Service JWKS. Empty = derive
     # <iss>/.well-known/jwks.json (only works for publicly-reachable issuers).
     jwksUrl: ""
+  # Device-mTLS public edge (admin access without WireGuard). Envoy terminates
+  # device-bound client-cert mTLS and forwards the verified leaf in
+  # X-Forwarded-Client-Cert; Talon believes it ONLY when the caller's Linkerd
+  # identity equals trustedClientId, else strips it. Empty = off.
+  deviceMtls:
+    trustedClientId: ""
+    # audit (default): log/count would_deny only. enforce: 403.
+    mode: audit
+    # Hosts the check applies to (empty = all).
+    hosts: []
+    # Plaintext HTTP container/Service port (named http-edge-mtls) serving the
+    # same handler as https, mesh-only: a Linkerd Server selects ONLY this port
+    # and an AuthorizationPolicy admits ONLY trustedClientId, so :8443 is
+    # untouched. 0 = disabled. Requires trustedClientId.
+    listenPort: 0
 
   # ─────────────────────────────────────────────────────────────────
   # Global ZTNA baseline policy (secure-by-default).
@@ -272,7 +287,7 @@ service:
     # as `service.ports.https`. Enables in-cluster clients to reach
     # Talon over the default HTTPS port 443 without rewriting the
     # JWKS URL to embed `:8443`. Pair with the CoreDNS rewrite for
-    # `internal.example.com → talon-talon.talon.svc.cluster.local`
+    # `auth.internal.example.com → talon-talon.talon.svc.cluster.local`
     # (<gitops-bootstrap-repo> addons/coredns-harbor-rewrite.yaml). Set
     # to null/omit to disable the alias port; the chart only renders
     # the port when truthy. Diagnosed live 2026-05-13 — admin-tier
@@ -316,7 +331,7 @@ externalSecrets:
     enabled: true
     secretStoreRef: vault-backend
     vaultKey: platform/prod/talon/harbor-pull
-    registry: internal.example.com
+    registry: harbor.internal.example.com
   # IAP identity-token RS256 signing key (gated by iapIdentityToken.enabled
   # at the top level — see below). DEDICATED key per NIST SP 800-57 §5.2
   # — do NOT reuse cookieEncryptKey. Generation: `openssl genrsa -out
@@ -406,17 +421,17 @@ extAuthz:
 conversionWebhook:
   enabled: false
   issuer:
-    # `example-tenant` is the production cert-manager ClusterIssuer
+    # `exampletenant` is the production cert-manager ClusterIssuer
     # the rest of the talon chart already uses (templates/certificate.yaml
     # for talon-talon-tls). `vault-pki-leaf` was the original Phase 6a.2
     # default but its live binding points at the linkerd-webhook Vault
     # role — wrong tenant for talon certs (`pki_root/sign/linkerd-webhook`
     # rejects the request with "the common_name field is required").
-    # example-tenant binds the proper Vault PKI role for general
+    # exampletenant binds the proper Vault PKI role for general
     # internal certs (verified 2026-06-01 live against talon-talon-tls
     # which is the existing in-production reference).
     kind: ClusterIssuer
-    name: example-tenant
+    name: exampletenant
   port: 9443
 
 # Aliased top-level flag the CRD template (in crds/) consumes. Helm
@@ -430,13 +445,13 @@ enableConversionWebhook: false
 # ---------------------------------------------------------------------------
 ingress:
   # The auth host (Talon's own UI: /auth/start, /auth/callback, /auth/logout).
-  authHost: internal.example.com
+  authHost: auth.internal.example.com
   # Per-host protected admin routes are listed here. Each entry generates a
   # Traefik IngressRoute on .host that forwards to the Talon Service; Talon
   # then policy-checks and proxies internally to .upstream.
   protectedHosts: []
     # Phase 1 pilot example (commented until Phase 1 lands):
-    # - host: internal.example.com
+    # - host: prometheus.internal.example.com
     #   upstream:
     #     service: prometheus-server.monitoring.svc.cluster.local
     #     port: 9090
@@ -463,8 +478,8 @@ ingress:
 # docs/specs/talon-service-tokens.md for the migration plan.
 svctoken:
   enabled: false
-  jwksUrl: https://id.hexxlock.com/.well-known/jwks.json
-  issuer: https://id.hexxlock.com
+  jwksUrl: https://id.example.com/.well-known/jwks.json
+  issuer: https://id.example.com
   # In-memory LRU size for jti replay-cache. Zero DISABLES replay
   # protection — which is the correct configuration for the JWT
   # access-token model (RFC 9068 §3 explicitly designs access tokens
@@ -525,7 +540,7 @@ svctoken:
   #         MIIBIj...
   #         -----END PUBLIC KEY-----
   #       allowedHosts:
-  #         - internal.example.com
+  #         - harbor.internal.example.com
   federatedIssuers: []
 
 # ---------------------------------------------------------------------------
@@ -562,11 +577,11 @@ backchannelLogout:
 # ---------------------------------------------------------------------------
 # cert-manager Certificate for the in-pod :8443 TLS listener. Browser
 # traffic terminates TLS at traefik-internal; this cert just needs to be
-# valid enough for Go's TLS server. example-tenant ClusterIssuer is
+# valid enough for Go's TLS server. exampletenant ClusterIssuer is
 # the right tier-1 source.
 tls:
   issuer:
-    name: example-tenant
+    name: exampletenant
     kind: ClusterIssuer
 
 # ---------------------------------------------------------------------------
@@ -577,6 +592,23 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 6
   targetCPUUtilizationPercentage: 60
+  # Talon fronts every *.ops host, so each scale-down drops in-flight
+  # connections. Against a 100m CPU request, short bursts (a CI push, a new
+  # pod's startup) crossed the target and the HPA flapped 4↔6 within minutes.
+  # Damp scale-up a little and hold scale-down for 10 minutes.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
 
 # ---------------------------------------------------------------------------
 # SpiceDB

@@ -11,7 +11,7 @@
 |----|-------|--------|-------|
 | A1 | User identity (Falcon-ID account + WebAuthn credential) | Identity | Falcon-ID |
 | A2 | Session cookie + Talon session row | Identity | Talon |
-| A3 | Device-cert private key (TPM/StrongBox-resident) | Devices | HexxLock Access client / Jess CA |
+| A3 | Device-cert private key (TPM/StrongBox-resident) | Devices | Access Agent client / Jess CA |
 | A4 | Device-cert public chain (jess-device-ca) | Devices | Jess |
 | A5 | Posture JWT (X-Talon-Posture, signed by device key) | Devices | Posture agent |
 | A6 | SSH cert (Jess SSH-CA signed) | Devices | Jess SSH broker |
@@ -25,7 +25,7 @@
 | A14 | Linkerd identity (cluster-internal SPIFFE) | Network | Linkerd |
 | A15 | Envoy data plane (customer-tier) | Network | Envoy Gateway |
 | A16 | Talon decision-core (PDP) | Apps | Talon |
-| A17 | OIDC discovery + JWKS (id.hexxlock.com) | Identity | Falcon-ID |
+| A17 | OIDC discovery + JWKS (id.example.com) | Identity | Falcon-ID |
 
 ## Threat catalogue
 

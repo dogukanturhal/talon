@@ -19,7 +19,7 @@ func sampleInput() *RegoInput {
 			AMR:      []string{"pwd", "mfa"},
 		},
 		Route: RegoInputRoute{
-			Host:       "internal.example.com",
+			Host:       "vault.internal.example.com",
 			Permission: "admin",
 		},
 		Request: RegoInputRequest{
@@ -129,7 +129,7 @@ default allow := true
 write_methods := {"POST", "PUT", "PATCH", "DELETE"}
 
 allow := false if {
-    input.route.host == "internal.example.com"
+    input.route.host == "vault.internal.example.com"
     input.request.method == m
     write_methods[m]
     not "webauthn" in input.user.amr

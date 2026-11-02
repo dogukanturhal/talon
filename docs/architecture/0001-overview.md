@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (locked by project boot prompt 2026-04-26)
 - **Date:** 2026-04-26
-- **Deciders:** dogukanturhal (project owner), Claude Opus 4.7 (drafting)
+- **Deciders:** dogukanturhal (project owner)
 - **Supersedes:** N/A (first ADR)
 - **Superseded by:** N/A
 - **Related:**
@@ -24,7 +24,7 @@ explicitly supersedes the relevant section.
 ## 2. Context
 
 The HexxLock platform exposes ~17 administrative web applications under
-`internal.example.com` (argocd, prometheus, grafana, alertmanager, vault,
+`*.internal.example.com` (argocd, prometheus, grafana, alertmanager, vault,
 longhorn, awx, atlantis, jaeger, netbox, sonarqube, defectdojo, dojo, wazuh,
 falcon, admin, rollouts). Today they sit behind Pomerium IAP. Pomerium emits
 HTTP 302 responses with bare-anchor bodies (`<a href>Found</a>`) plus
@@ -59,7 +59,7 @@ Build Talon, a single-binary Go reverse proxy that authenticates every request
 against Falcon-ID via OIDC, evaluates per-route access policy through SpiceDB,
 and forwards to admin upstreams over Linkerd-mTLS. Talon implements
 NIST SP 800-207 §3 PEP/PE/PA in one process; it is the **sole** IAP for the
-`internal.example.com` admin tier after Phase 5.
+`*.internal.example.com` admin tier after Phase 5.
 
 The single-binary form is deliberate. NIST 800-207 §3.1 defines the
 Policy Decision Point (PDP) as a *logical* split into Policy Engine (PE) and
@@ -100,7 +100,7 @@ HexxLock has no such requirement.
 | **Policy Enforcement Point (PEP)** | `cmd/talon` HTTP entrypoint + `internal/proxy` | Terminates browser TLS, forwards to upstream over Linkerd mTLS. Identity headers (`X-Talon-User`, `X-Talon-Email`, `X-Talon-Groups`, `X-Talon-Subject`) are *injected*, not relayed; any incoming header with that prefix is stripped first. |
 | **Policy Engine (PE)** | `internal/policy` | Two-stage decision: (a) JWT claims valid + group filter passes, (b) SpiceDB `CheckPermission(talon_route:<host>#access@user:<id>)` returns `PERMISSIONSHIP_HAS_PERMISSION`. PE has no I/O *to* the request — it returns allow/deny only. |
 | **Policy Administrator (PA)** | `internal/oidc` + `internal/route/reconciler.go` | OIDC handshake (start, callback, logout) + session lifecycle + dynamic `TalonRoute` CRD reconciler. Mutates session store, talks to Falcon-ID. |
-| **Identity (subject store)** | Falcon-ID | OIDC IdP at `id.hexxlock.com`. Talon is just an RP. |
+| **Identity (subject store)** | Falcon-ID | OIDC IdP at `id.example.com`. Talon is just an RP. |
 | **Authorization data (object store)** | SpiceDB | Zanzibar-style relations: `talon_route#access@user`. Schema in §5.b. |
 | **Session store** | Redis (in-cluster, shared with Falcon-ID) | Talon keys under `talon:session:<uuid>` namespace; AES-GCM encrypted blob; 8h sliding TTL. |
 | **Telemetry sink (CDM)** | Prometheus + Loki + Wazuh (Phase 4) | Per-decision audit log (allow/deny/error) → stdout JSON → Loki, then forwarded to Wazuh in Phase 4. |
@@ -110,19 +110,19 @@ HexxLock has no such requirement.
 ### 5.a. Request flow (cookieless cold start)
 
 ```
-1. GET https://internal.example.com/                                   (browser)
+1. GET https://prometheus.internal.example.com/                                   (browser)
 2. Talon sees no talon_session cookie
-3. 302 → https://internal.example.com/auth/start?rd=https%3A%2F%2Finternal.example.com%2F
+3. 302 → https://auth.internal.example.com/auth/start?rd=https%3A%2F%2Fprometheus.internal.example.com%2F
    (full HTML body — see §5.d)                                                (Talon)
 4. GET /auth/start                                                            (browser)
 5. Talon writes handshake cookies (state, code_verifier), 302 → Falcon-ID
    /oauth/authorize?client_id=svc-talon&redirect_uri=…/auth/callback&PKCE     (Talon)
 6. Falcon-ID interactive sign-in (or SSO if cookie present)                   (Falcon-ID)
-7. 302 → https://internal.example.com/auth/callback?code=…&state=…           (Falcon-ID)
+7. 302 → https://auth.internal.example.com/auth/callback?code=…&state=…           (Falcon-ID)
 8. Talon validates state, exchanges code for tokens (PKCE), validates id_token
    against Falcon-ID JWKS, applies group filter (platform-admin), creates
    session in Redis, sets talon_session=<uuid> cookie, 302 → original rd      (Talon)
-9. GET https://internal.example.com/  (now with talon_session cookie)  (browser)
+9. GET https://prometheus.internal.example.com/  (now with talon_session cookie)  (browser)
 10. Talon resolves cookie → Redis session → user claims
 11. Talon evaluates SpiceDB CheckPermission for talon_route:prometheus.ops…
 12. Allowed → ReverseProxy strips X-Talon-* headers from request, injects
@@ -156,7 +156,7 @@ upstreams that consult Talon for finer-grained authorisation (e.g. an admin
 UI that hides destructive actions from `viewer`-only users). Schema lives at
 `deploy/spicedb/talon.zed` and ships via the SpiceDB schema-write hook
 pattern already used by Falcon-ID
-(`deploy/helm/falcon-id/templates/spicedb-schema-hook.yaml`).
+(the Falcon-ID Helm chart's SpiceDB schema hook).
 
 ### 5.c. Cookie and session model (high-level — full detail in ADR 0002)
 
@@ -164,7 +164,7 @@ pattern already used by Falcon-ID
 |----------|-------|--------|
 | Cookie name | `talon_session` | Locked by boot prompt §3 |
 | Value shape | Opaque UUID v4, ≤ 200 bytes total cookie | Avoids 4 KB browser cap and iOS truncation |
-| `Domain` | `internal.example.com` | RFC 6265 §5.3.6; all admin hosts are subdomains, all share session |
+| `Domain` | `.internal.example.com` | RFC 6265 §5.3.6; all admin hosts are subdomains, all share session |
 | `HttpOnly` | true | Mitigate XSS session theft |
 | `Secure` | true | TLS-only |
 | `SameSite` | `Lax` | Allows Falcon-ID redirect-back to set cookie; blocks CSRF |
@@ -188,7 +188,7 @@ in `internal/oidc/redirect.go::WriteHTMLRedirect` (port of Falcon-ID's
 enforced via a unit test that asserts response shape against the canonical
 form.
 
-Reference: `e2e/ios/README.md` is the runtime verification rig.
+Reference: an iOS verification rig (not published).
 
 ## 6. Comparison with peer IAPs
 
@@ -234,7 +234,7 @@ reassess.
 
 | Threat | Vector | Mitigation |
 |--------|--------|-----------|
-| **S**poofing — forged JWT | Client mints id_token signed with self-issued key | PE verifies against Falcon-ID JWKS (cached 1h, kid-checked). `iss` must match `https://id.hexxlock.com`. |
+| **S**poofing — forged JWT | Client mints id_token signed with self-issued key | PE verifies against Falcon-ID JWKS (cached 1h, kid-checked). `iss` must match `https://id.example.com`. |
 | **T**ampering — claim editing | MITM rewrites groups claim | id_token is signature-verified before claim read; tamper invalidates signature. |
 | **R**epudiation — no decision log | Allow/deny disputed | Each `CheckPermission` decision logged with user, resource, permissionship result, ZedToken. |
 | **I**nformation disclosure — SpiceDB enumeration | `LookupResources` reveals route names | Talon never exposes SpiceDB to clients; only `CheckPermission` per-request, never `LookupResources`/`LookupSubjects`. |
@@ -364,7 +364,7 @@ Three trust boundaries cross Talon:
   template as falcon-id; explicit threat model in §7 to be reviewed at
   every Phase exit.
 - Phase 5 is a one-way door. Once Pomerium is decommissioned and DNS for
-  `auth-internal.example.com` is gone, rollback to Pomerium would
+  `auth-pomerium.internal.example.com` is gone, rollback to Pomerium would
   take days. Mitigation: Phase 3's 7-day soak window with Pomerium
   Ingresses parked as `*.disabled.yaml` — easy revert.
 - 7-week timeline competes for attention with other tier-1 platform

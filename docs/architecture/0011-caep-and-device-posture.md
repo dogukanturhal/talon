@@ -7,7 +7,7 @@
 ## Context
 
 The tier-1 IAP gap analysis (research log under
-docs/research/2026-06-02-talon-tier1-iap-gap-analysis.md to follow)
+a research log (planned))
 identified two real-time security signals Talon does not yet consume:
 
 1. **Cross-IdP / multi-vendor session revocation.** When an IdP

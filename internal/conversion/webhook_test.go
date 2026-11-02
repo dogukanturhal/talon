@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	v1alpha1API = "gateway.talon.hexxlock.com/v1alpha1"
-	v1beta1API  = "gateway.talon.hexxlock.com/v1beta1"
+	v1alpha1API = "gateway.talon.example.com/v1alpha1"
+	v1beta1API  = "gateway.talon.example.com/v1beta1"
 )
 
 func TestHandler_UpConvert_V1alpha1ToV1beta1(t *testing.T) {
@@ -30,7 +30,7 @@ func TestHandler_UpConvert_V1alpha1ToV1beta1(t *testing.T) {
 			Name: "prometheus-ops", Namespace: "monitoring",
 		},
 		Spec: v1alpha1.TalonRouteSpec{
-			Host:        "internal.example.com",
+			Host:        "prometheus.internal.example.com",
 			Upstream:    v1alpha1.Upstream{Service: "kube-prometheus-stack-prometheus", Port: 9090},
 			Permission:  v1alpha1.PermissionViewer,
 			MfaRequired: true,
@@ -118,7 +118,7 @@ func TestHandler_IdentityPassthrough_NoConversion(t *testing.T) {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1alpha1API, Kind: "TalonRoute"},
 		ObjectMeta: metav1.ObjectMeta{Name: "x"},
 		Spec: v1alpha1.TalonRouteSpec{
-			Host:     "x.hexxlock.com",
+			Host:     "x.example.com",
 			Upstream: v1alpha1.Upstream{Service: "x", Port: 80},
 		},
 	}
@@ -132,7 +132,7 @@ func TestHandler_IdentityPassthrough_NoConversion(t *testing.T) {
 	if err := json.Unmarshal(resp.ConvertedObjects[0].Raw, &out); err != nil {
 		t.Fatalf("identity passthrough: decode: %v", err)
 	}
-	if out.Spec.Host != "x.hexxlock.com" {
+	if out.Spec.Host != "x.example.com" {
 		t.Errorf("identity passthrough: lost Host; got %q", out.Spec.Host)
 	}
 }
@@ -140,7 +140,7 @@ func TestHandler_IdentityPassthrough_NoConversion(t *testing.T) {
 func TestHandler_UnsupportedVersion_Failure(t *testing.T) {
 	// A CR with an unknown apiVersion should fail per-object without
 	// poisoning the entire ConversionReview.
-	bad := json.RawMessage(`{"apiVersion":"gateway.talon.hexxlock.com/v999unknown","kind":"TalonRoute","metadata":{"name":"x"}}`)
+	bad := json.RawMessage(`{"apiVersion":"gateway.talon.example.com/v999unknown","kind":"TalonRoute","metadata":{"name":"x"}}`)
 	review := apiextensionsv1.ConversionReview{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apiextensions.k8s.io/v1", Kind: "ConversionReview"},
 		Request: &apiextensionsv1.ConversionRequest{

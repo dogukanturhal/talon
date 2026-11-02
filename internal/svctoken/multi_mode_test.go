@@ -101,7 +101,7 @@ func TestDecide_CookieOrBearerOrPassthrough_LegacyPAT_Passthrough(t *testing.T) 
 	v := newVerifierAgainst(t, f, "https://id.test")
 	r := httptest.NewRequest(http.MethodPost, "https://github.com/api/v4/projects/2/merge_requests", nil)
 	r.Header.Set("Authorization", "Basic "+
-		base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-LegacyAtlantisPAT12345"))) // gitleaks:allow — test fixture, not a real credential
+		base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-LegacyAtlantisPAT12345")))
 	r.Host = "github.com"
 	d := v.Decide(r, AuthModeCookieOrBearerOrPassthrough)
 	if d.Outcome != OutcomePassthrough {
@@ -156,7 +156,7 @@ func TestAuthMode_CookieOrBearerOrPassthrough_IsValid(t *testing.T) {
 //
 // The failure mode was invisible rather than loud: Talon verified the
 // caller's token, authorised the request, and forwarded it WITHOUT a
-// credential the upstream could understand. On internal.example.com
+// credential the upstream could understand. On npm.internal.example.com
 // (Verdaccio, which cannot validate Falcon-ID JWTs) a correctly-scoped
 // token produced `GET /-/whoami -> 200 {}` and 401 on every private
 // package — an authorised caller unable to read its own packages.

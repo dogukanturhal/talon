@@ -58,7 +58,7 @@ func newServerTestPKI(t *testing.T) *serverTestPKI {
 func (p *serverTestPKI) mintLeafWithKey(t *testing.T, deviceUUID string) (leaf *x509.Certificate, certDER []byte, leafKey *ecdsa.PrivateKey) {
 	t.Helper()
 	leafKey, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	spiffeURI, _ := url.Parse("spiffe://hexxlock.com/device/" + deviceUUID)
+	spiffeURI, _ := url.Parse("spiffe://example.com/device/" + deviceUUID)
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(99),
 		Subject:      pkix.Name{CommonName: deviceUUID},
@@ -145,8 +145,8 @@ func newServerFixture(t *testing.T) *serverFixture {
 
 	iss, err := NewJWSIssuer(JWSIssuerConfig{
 		VaultAddr: vaultStub.URL, KeyName: "posture-signer",
-		Issuer:    "https://posture.hexxlock.com",
-		Audience:  "https://internal.example.com",
+		Issuer:    "https://posture.example.com",
+		Audience:  "https://auth.internal.example.com",
 		TokenPath: "/vault/secrets/token",
 	})
 	if err != nil {

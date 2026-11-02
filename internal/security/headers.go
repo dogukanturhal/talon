@@ -120,7 +120,7 @@ type Options struct {
 	// support — list the hosts explicitly so the security exception is
 	// auditable.
 	//
-	// Env: TALON_SKIP_COOP_HOSTS=internal.example.com,other.host
+	// Env: TALON_SKIP_COOP_HOSTS=vault.internal.example.com,other.host
 	SkipCOOPHosts []string
 }
 
@@ -132,7 +132,7 @@ const (
 	// mode OIDC RPs (Vault UI, etc.) preserve `window.opener` across the
 	// cross-origin navigation through Falcon-ID. Strict `same-origin`
 	// SEVERS window.opener the moment the popup leaves vault.ops for
-	// id.hexxlock.com, so the popup's eventual callback page at
+	// id.example.com, so the popup's eventual callback page at
 	// vault.ops/ui/.../callback throws
 	//   Cannot read properties of null (reading 'postMessage')
 	// when it tries to deliver the auth code back to the parent tab.
@@ -190,7 +190,7 @@ func Headers(opts Options, next http.Handler) http.Handler {
 		}
 		if coopValue != "" {
 			// Host comparison is case-insensitive per RFC 7230 §5.4.
-			// Strip the port suffix (`internal.example.com:443`) so
+			// Strip the port suffix (`vault.internal.example.com:443`) so
 			// the operator-configured list stays simple.
 			host := strings.ToLower(r.Host)
 			if i := strings.IndexByte(host, ':'); i >= 0 {

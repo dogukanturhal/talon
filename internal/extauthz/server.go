@@ -10,8 +10,8 @@
 // per-path) policy. Phase 7 makes Talon a SHARED PDP that multiple
 // data planes consume:
 //
-//   - Talon's own HTTP data plane (admin tier internal.example.com)
-//   - APISIX (customer tier *.hexxlock.com + api.example.app)
+//   - Talon's own HTTP data plane (admin tier *.internal.example.com)
+//   - APISIX (customer tier *.example.com + api.example.app)
 //   - Future: Envoy Gateway, Istio, Cilium, HAProxy, Traefik, ingress-nginx
 //
 // The wire contract is Envoy ext_authz v3 — the cross-implementation

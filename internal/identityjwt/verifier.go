@@ -13,8 +13,8 @@
 // Edge Runtime's Request):
 //
 //	v, err := identityjwt.NewVerifier(identityjwt.VerifierConfig{
-//	    JWKSURL:          "https://internal.example.com/.well-known/jwks.json",
-//	    ExpectedIssuer:   "https://internal.example.com",
+//	    JWKSURL:          "https://auth.internal.example.com/.well-known/jwks.json",
+//	    ExpectedIssuer:   "https://auth.internal.example.com",
 //	    ExpectedAudience: "registry.example.com",
 //	})
 //	claims, err := v.VerifyRequest(r)
@@ -152,7 +152,7 @@ var (
 // failed request.
 type VerifierConfig struct {
 	// JWKSURL is Talon's published key set, typically
-	// "https://internal.example.com/.well-known/jwks.json".
+	// "https://auth.internal.example.com/.well-known/jwks.json".
 	JWKSURL string
 
 	// ExpectedIssuer is the operator-supplied iss value the verifier

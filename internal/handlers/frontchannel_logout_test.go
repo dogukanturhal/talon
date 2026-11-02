@@ -34,8 +34,8 @@ func newTestFCL(t *testing.T) *FrontchannelLogout {
 		Store:         &session.Store{},
 		Redis:         &redis.Client{},
 		Audit:         audit.New(slog.Default(), "test"),
-		IssuerURL:     "https://id.hexxlock.com",
-		FrameAncestor: "https://id.hexxlock.com",
+		IssuerURL:     "https://id.example.com",
+		FrameAncestor: "https://id.example.com",
 	}
 }
 
@@ -43,14 +43,14 @@ func newTestFCLNoDeps(t *testing.T) *FrontchannelLogout {
 	t.Helper()
 	return &FrontchannelLogout{
 		Audit:         audit.New(slog.Default(), "test"),
-		IssuerURL:     "https://id.hexxlock.com",
-		FrameAncestor: "https://id.hexxlock.com",
+		IssuerURL:     "https://id.example.com",
+		FrameAncestor: "https://id.example.com",
 	}
 }
 
 func TestFrontchannelLogout_RejectsNonGET(t *testing.T) {
 	h := newTestFCL(t)
-	req := httptest.NewRequest(http.MethodPost, "/auth/frontchannel-logout?iss=https://id.hexxlock.com&sid=11111111-1111-1111-1111-111111111111", nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/frontchannel-logout?iss=https://id.example.com&sid=11111111-1111-1111-1111-111111111111", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -66,7 +66,7 @@ func TestFrontchannelLogout_RejectsNonGET(t *testing.T) {
 
 func TestFrontchannelLogout_MissingDependenciesReturns503(t *testing.T) {
 	h := newTestFCLNoDeps(t)
-	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.hexxlock.com&sid=11111111-1111-1111-1111-111111111111", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.example.com&sid=11111111-1111-1111-1111-111111111111", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
@@ -94,9 +94,9 @@ func TestFrontchannelLogout_IssMismatchReturns400(t *testing.T) {
 	h := newTestFCL(t)
 	cases := []struct{ name, iss string }{
 		{"different host", "https://attacker.example.com"},
-		{"different scheme", "http://id.hexxlock.com"},
-		{"host suffix attack", "https://id.hexxlock.com.attacker.example"},
-		{"path injection", "https://id.hexxlock.com/admin"},
+		{"different scheme", "http://id.example.com"},
+		{"host suffix attack", "https://id.example.com.attacker.example"},
+		{"path injection", "https://id.example.com/admin"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestFrontchannelLogout_IssMismatchReturns400(t *testing.T) {
 
 func TestFrontchannelLogout_MissingSIDReturns400(t *testing.T) {
 	h := newTestFCL(t)
-	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.hexxlock.com", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.example.com", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -128,7 +128,7 @@ func TestFrontchannelLogout_MissingSIDReturns400(t *testing.T) {
 
 func TestFrontchannelLogout_NonUUIDSidReturns400(t *testing.T) {
 	h := newTestFCL(t)
-	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.hexxlock.com&sid=not-a-uuid", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/frontchannel-logout?iss=https://id.example.com&sid=not-a-uuid", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -160,8 +160,8 @@ func TestFrontchannelLogout_ResponseHeaders_AlwaysSet(t *testing.T) {
 	if got := rec.Header().Get("Expires"); got != "0" {
 		t.Errorf("Expires=%q, want 0", got)
 	}
-	if got := rec.Header().Get("Content-Security-Policy"); got != "frame-ancestors https://id.hexxlock.com" {
-		t.Errorf("CSP=%q, want frame-ancestors https://id.hexxlock.com", got)
+	if got := rec.Header().Get("Content-Security-Policy"); got != "frame-ancestors https://id.example.com" {
+		t.Errorf("CSP=%q, want frame-ancestors https://id.example.com", got)
 	}
 }
 
@@ -202,16 +202,16 @@ func TestIssuerMatches(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{"exact match", "https://id.hexxlock.com", "https://id.hexxlock.com", true},
-		{"got with trailing slash", "https://id.hexxlock.com/", "https://id.hexxlock.com", true},
-		{"want with trailing slash", "https://id.hexxlock.com", "https://id.hexxlock.com/", true},
-		{"both with trailing slash", "https://id.hexxlock.com/", "https://id.hexxlock.com/", true},
-		{"different scheme rejected", "http://id.hexxlock.com", "https://id.hexxlock.com", false},
-		{"different host rejected", "https://other.example.com", "https://id.hexxlock.com", false},
-		{"host suffix attack rejected", "https://id.hexxlock.com.attacker.example", "https://id.hexxlock.com", false},
-		{"path mismatch rejected", "https://id.hexxlock.com/admin", "https://id.hexxlock.com", false},
-		{"empty want rejects everything", "https://id.hexxlock.com", "", false},
-		{"unparseable got rejected", "::not-a-url", "https://id.hexxlock.com", false},
+		{"exact match", "https://id.example.com", "https://id.example.com", true},
+		{"got with trailing slash", "https://id.example.com/", "https://id.example.com", true},
+		{"want with trailing slash", "https://id.example.com", "https://id.example.com/", true},
+		{"both with trailing slash", "https://id.example.com/", "https://id.example.com/", true},
+		{"different scheme rejected", "http://id.example.com", "https://id.example.com", false},
+		{"different host rejected", "https://other.example.com", "https://id.example.com", false},
+		{"host suffix attack rejected", "https://id.example.com.attacker.example", "https://id.example.com", false},
+		{"path mismatch rejected", "https://id.example.com/admin", "https://id.example.com", false},
+		{"empty want rejects everything", "https://id.example.com", "", false},
+		{"unparseable got rejected", "::not-a-url", "https://id.example.com", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

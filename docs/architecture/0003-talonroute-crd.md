@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (locked 2026-04-26)
 - **Date:** 2026-04-26
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Refines:** ADR 0001 §3 ("Routing config = CRD (`TalonRoute`) — not ConfigMap")
 - **Related:** ADR 0001 §5.b (SpiceDB schema), ADR 0002 (cookie/session)
 
@@ -26,7 +26,7 @@ a pod restart.
 
 ### 3.1 Group / version / kind
 
-- Group: `gateway.talon.hexxlock.com`
+- Group: `gateway.talon.example.com`
 - Version: `v1alpha1` (Phase 2); `v1beta1` once any field rename
   ships (ADR-superseded).
 - Kind: `TalonRoute`
@@ -37,13 +37,13 @@ a pod restart.
 ### 3.2 Spec
 
 ```yaml
-apiVersion: gateway.talon.hexxlock.com/v1alpha1
+apiVersion: gateway.talon.example.com/v1alpha1
 kind: TalonRoute
 metadata:
   name: prometheus-ops
   namespace: monitoring
 spec:
-  host: internal.example.com           # required, must end in internal.example.com
+  host: prometheus.internal.example.com           # required, must end in .internal.example.com
   upstream:                                    # required
     service: kube-prometheus-stack-prometheus  # k8s service name in this ns (or fully-qualified)
     port: 9090                                 # 1..65535
@@ -139,9 +139,9 @@ event.
 
 Talon SA (`talon/talon-talon`) needs:
 
-- `gateway.talon.hexxlock.com/talonroutes` — get, list, watch
-- `gateway.talon.hexxlock.com/talonroutes/status` — patch, update
-- `gateway.talon.hexxlock.com/talonroutes/finalizers` — update
+- `gateway.talon.example.com/talonroutes` — get, list, watch
+- `gateway.talon.example.com/talonroutes/status` — patch, update
+- `gateway.talon.example.com/talonroutes/finalizers` — update
 - `coordination.k8s.io/leases` — get, list, watch, create, update,
   patch (in `talon` ns only, for leader election)
 
@@ -221,7 +221,7 @@ TalonRoute CR. Phase 5 removes the static env-var fallback entirely.
   asserts allow/deny flows + cache TTL.
 - Integration: `test/integration/crd_test.go` — kind cluster, apply
   TalonRoute, verify HTTP request to host gets routed.
-- iOS: every Phase exit per `e2e/ios/README.md`.
+- iOS: every Phase exit per an unpublished e2e test.
 
 ## 8. References
 

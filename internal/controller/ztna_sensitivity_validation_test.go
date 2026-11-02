@@ -17,7 +17,7 @@ import (
 func TestValidateRoute_Sensitivity(t *testing.T) {
 	base := &gatewayv1alpha1.TalonRoute{
 		Spec: gatewayv1alpha1.TalonRouteSpec{
-			Host: "internal.example.com",
+			Host: "grafana.internal.example.com",
 			Upstream: gatewayv1alpha1.Upstream{
 				Service: "grafana",
 				Port:    80,

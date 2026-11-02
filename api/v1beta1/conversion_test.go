@@ -20,7 +20,7 @@ import (
 // non-state.
 func TestRoundTrip_V1alpha1_to_V1beta1_to_V1alpha1(t *testing.T) {
 	original := v1alpha1.TalonRouteSpec{
-		Host: "internal.example.com",
+		Host: "prometheus.internal.example.com",
 		Upstream: v1alpha1.Upstream{
 			Service: "kube-prometheus-stack-prometheus",
 			Port:    9090,
@@ -153,7 +153,7 @@ func TestFromV1alpha1_FullCR(t *testing.T) {
 			Labels:    map[string]string{"app.kubernetes.io/part-of": "hexxlock-platform"},
 		},
 		Spec: v1alpha1.TalonRouteSpec{
-			Host:       "internal.example.com",
+			Host:       "prometheus.internal.example.com",
 			Upstream:   v1alpha1.Upstream{Service: "kube-prometheus-stack-prometheus", Port: 9090},
 			Permission: v1alpha1.PermissionViewer,
 		},
@@ -191,7 +191,7 @@ func TestFromV1alpha1_FullCR(t *testing.T) {
 	if len(out.Status.Conditions) != 1 {
 		t.Errorf("Conditions: want 1, got %d", len(out.Status.Conditions))
 	}
-	if out.Spec.Host != "internal.example.com" {
+	if out.Spec.Host != "prometheus.internal.example.com" {
 		t.Errorf("Spec.Host did not survive conversion: %q", out.Spec.Host)
 	}
 }
@@ -204,7 +204,7 @@ func TestFromV1alpha1_FullCR(t *testing.T) {
 func TestDeepCopy_PathRulesIndependent(t *testing.T) {
 	in := &TalonRoute{
 		Spec: TalonRouteSpec{
-			Host: "x.hexxlock.com",
+			Host: "x.example.com",
 			PathRules: []PathRule{
 				{Name: "r1", Match: PathRuleMatch{Path: "/a"}},
 				{Name: "r2", Match: PathRuleMatch{PathPrefix: []string{"/b/"}}},

@@ -30,7 +30,7 @@
 //
 //	talon-upstream-creds-<host-with-dots-as-dashes>
 //
-// (e.g. github.com → talon-upstream-creds-git-example-com).
+// (e.g. github.com → talon-upstream-creds-github-com).
 // Operators provision these Secrets via ExternalSecret from Vault so
 // the actual credential material lives in Vault, never in Git, and
 // rotation happens out-of-band of Talon's release cycle.
@@ -173,7 +173,7 @@ const (
 // SecretNameForHost returns the canonical Secret name for the
 // host-default upstream credential. Dots become dashes so the
 // resulting name is a valid DNS-1123 SUBDOMAIN (max 253 chars).
-// github.com → talon-upstream-creds-git-example-com.
+// github.com → talon-upstream-creds-github-com.
 //
 // The name is deterministic so operators can predict it without
 // reading Talon source. Reserved for the K8sSecretLoader; alternative
@@ -193,7 +193,7 @@ func SecretNameForHost(host string) string {
 //	talon-upstream-creds-<host-with-dots-as-dashes>-<client-id>
 //
 // e.g. github.com + svc-svc-gitlab-bcl-receiver →
-// talon-upstream-creds-git-example-com-svc-svc-gitlab-bcl-receiver.
+// talon-upstream-creds-github-com-svc-svc-gitlab-bcl-receiver.
 //
 // K8s Secret names follow DNS-1123 SUBDOMAIN (max 253 chars), so this
 // scheme fits even pessimistic host + client_id combinations. The

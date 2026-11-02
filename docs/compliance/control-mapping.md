@@ -110,7 +110,7 @@ chains, so the `hmac_key_id` in the manifest pins which key signed.
 > share the same lifecycle policy. Talon-side prefix:
 > `s3://audit-archive/talon/year=YYYY/month=MM/day=DD/`.
 >
-> ADR for this lands as a separate doc (planned: `docs/architecture/0011-worm-archive.md`).
+> ADR for this lands as a separate doc (planned; see 0041-audit-worm-contract.md for the current contract).
 
 ## 6. Quarterly compliance dashboard
 

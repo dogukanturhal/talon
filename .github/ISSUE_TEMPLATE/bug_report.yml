@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security problems use the private report link in SECURITY.md instead of this form.
+  - type: input
+    id: version
+    attributes:
+      label: Talon version
+      description: Image tag or output of `talon version`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: Kubernetes version (or "docker compose"), identity provider, SpiceDB version
+      placeholder: "Kubernetes 1.31, Dex 2.41, SpiceDB 1.40"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Configuration and steps to reproduce
+      description: TalonRoute manifests or environment variables. Remove secrets, tokens and hostnames you do not want public.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Talon log lines around the failing request. Remove cookies and tokens.
+      render: text

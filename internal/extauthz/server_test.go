@@ -68,7 +68,7 @@ func TestCheck_Allowed_InjectsIdentityHeaders(t *testing.T) {
 	s := NewServer(fv)
 
 	resp, err := s.Check(context.Background(),
-		makeReq("internal.example.com", "talon_session=abc123", "GET", "/api/v1/query", ""))
+		makeReq("prometheus.internal.example.com", "talon_session=abc123", "GET", "/api/v1/query", ""))
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestCheck_Denied_EmitsRFC9470Challenge(t *testing.T) {
 	s := NewServer(fv)
 
 	resp, err := s.Check(context.Background(),
-		makeReq("internal.example.com", "talon_session=x", "GET", "/admin/", ""))
+		makeReq("admin.internal.example.com", "talon_session=x", "GET", "/admin/", ""))
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestCheck_Denied_Returns401WithReason(t *testing.T) {
 	s := NewServer(fv)
 
 	resp, err := s.Check(context.Background(),
-		makeReq("internal.example.com", "", "GET", "/", ""))
+		makeReq("grafana.internal.example.com", "", "GET", "/", ""))
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -220,17 +220,17 @@ func TestCheck_HostExtraction_PrefersXForwardedHost(t *testing.T) {
 	fv := &fakeVerifier{decision: router.VerifyDecision{Allowed: true}}
 	s := NewServer(fv)
 
-	req := makeReq("internal.example.com", "talon_session=x", "GET", "/", "")
+	req := makeReq("prometheus.internal.example.com", "talon_session=x", "GET", "/", "")
 	// Also set the :authority/Host on the underlying httpReq — extauthz
 	// must prefer x-forwarded-host (APISIX sets that as the original
 	// host, while :authority is the auth-host the subrequest targets).
-	req.Attributes.Request.Http.Host = "internal.example.com"
+	req.Attributes.Request.Http.Host = "auth.internal.example.com"
 
 	if _, err := s.Check(context.Background(), req); err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if fv.lastIn.Host != "internal.example.com" {
-		t.Errorf("Host: want x-forwarded-host (internal.example.com), got %q", fv.lastIn.Host)
+	if fv.lastIn.Host != "prometheus.internal.example.com" {
+		t.Errorf("Host: want x-forwarded-host (prometheus.internal.example.com), got %q", fv.lastIn.Host)
 	}
 }
 
@@ -239,12 +239,12 @@ func TestCheck_HostExtraction_FallsBackToAuthority(t *testing.T) {
 	s := NewServer(fv)
 
 	req := makeReq("", "talon_session=x", "GET", "/", "")
-	req.Attributes.Request.Http.Host = "internal.example.com"
+	req.Attributes.Request.Http.Host = "grafana.internal.example.com"
 
 	if _, err := s.Check(context.Background(), req); err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if fv.lastIn.Host != "internal.example.com" {
+	if fv.lastIn.Host != "grafana.internal.example.com" {
 		t.Errorf("Host: want :authority fallback, got %q", fv.lastIn.Host)
 	}
 }

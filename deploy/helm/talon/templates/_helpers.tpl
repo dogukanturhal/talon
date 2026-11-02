@@ -23,8 +23,8 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: hexxlock-platform
 app.kubernetes.io/component: identity-aware-proxy
-hexxlock.com/environment: {{ .Values.global.environment | default "prod" }}
-hexxlock.com/region: {{ .Values.global.region | default "eu-west-1" }}
+example.com/environment: {{ .Values.global.environment | default "prod" }}
+example.com/region: {{ .Values.global.region | default "eu-west-1" }}
 {{- end -}}
 
 {{- define "talon.selectorLabels" -}}

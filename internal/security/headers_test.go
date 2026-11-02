@@ -44,7 +44,7 @@ func TestHeaders_SkipCOOPHosts(t *testing.T) {
 	}{
 		{"listed host omits COOP", "vault.internal.example.com", ""},
 		{"listed host with port omits COOP", "vault.internal.example.com:443", ""},
-		{"case-insensitive match", "VAULT.internal.example.com", ""},
+		{"case-insensitive match", "VAULT.INTERNAL.EXAMPLE.COM", ""},
 		{"second listed host (whitespace + case normalized)", "other.host", ""},
 		{"unlisted host still gets COOP", "argocd.internal.example.com", "same-origin-allow-popups"},
 		{"unlisted host with port", "argocd.internal.example.com:8443", "same-origin-allow-popups"},

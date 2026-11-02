@@ -8,15 +8,15 @@
 // Wire shape — a SET is a JWS-signed JWT with this payload:
 //
 //	{
-//	  "iss": "https://id.hexxlock.com",
-//	  "aud": "https://internal.example.com",
+//	  "iss": "https://id.example.com",
+//	  "aud": "https://auth.internal.example.com",
 //	  "iat": 1717000000,
 //	  "jti": "uniq-event-id",
 //	  "events": {
 //	    "https://schemas.openid.net/secevent/caep/event-type/session-revoked": {
 //	      "subject": {
 //	        "format": "iss_sub",
-//	        "iss": "https://id.hexxlock.com",
+//	        "iss": "https://id.example.com",
 //	        "sub": "user-123"
 //	      },
 //	      "event_timestamp": 1717000000,

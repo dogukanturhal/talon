@@ -1,0 +1,25 @@
+# Loaded by SpiceDB at start-up (--datastore-bootstrap-files).
+#
+# The schema is the subset Talon requires (internal/spicedb/schema.zed).
+# Relationships: alice may open the demo route; bob is not listed, so Talon
+# denies him even though he can sign in.
+#
+# Route object ids are the route host with dots replaced by underscores.
+schema: |-
+  definition user {}
+
+  definition group {
+      relation member: user
+  }
+
+  definition talon_route {
+      relation viewer: user | group#member
+      relation editor: user | group#member
+      relation admin:  user | group#member
+
+      permission access = viewer + editor + admin
+      permission write  = editor + admin
+      permission manage = admin
+  }
+relationships: |-
+  talon_route:whoami_demo_localtest_me#viewer@user:alice

@@ -3,7 +3,7 @@
        hop from Traefik to Talon is HTTPS but with insecureSkipVerify=true
        in the ServersTransport (since Linkerd handles wire mTLS). The
        cert just needs to be valid enough for Go's TLS server to accept
-       it; example-tenant ClusterIssuer is the right tier-1 source. */}}
+       it; exampletenant ClusterIssuer is the right tier-1 source. */}}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

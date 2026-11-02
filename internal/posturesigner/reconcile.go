@@ -63,7 +63,7 @@ const (
 
 // ReconcileRecord is one durably-spooled offline posture report replayed to
 // POST /v1/reconcile-posture. Its JSON shape MUST match the agent's Rust
-// `ReconcileRecord` (hexxlock-access crates/heartbeat-client) EXACTLY — the
+// `ReconcileRecord` (access-agent crates/heartbeat-client) EXACTLY — the
 // decoder runs DisallowUnknownFields, so field names and nesting are load-
 // bearing:
 //

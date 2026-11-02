@@ -31,7 +31,7 @@
 // exactly; this IS the auth, supplemented by:
 //
 //   - Content-Security-Policy: frame-ancestors locks the iframe to
-//     id.hexxlock.com so a hostile site can't embed it to force-logout
+//     id.example.com so a hostile site can't embed it to force-logout
 //     users (FCL §5).
 //   - Linkerd Server CR + AuthorizationPolicy on the auth host gates
 //     the wire path (defense in depth — Falcon-ID's logout page is
@@ -109,7 +109,7 @@ type FrontchannelLogout struct {
 	IssuerURL string
 	// FrameAncestor is the origin allowed to embed this iframe via
 	// CSP frame-ancestors. Typically the OP's logout-page origin,
-	// e.g. "https://id.hexxlock.com". Empty disables the CSP header
+	// e.g. "https://id.example.com". Empty disables the CSP header
 	// and falls back to "frame-ancestors 'self' https:" (still safe
 	// but less restrictive — log a warning at startup).
 	FrameAncestor string
@@ -270,13 +270,13 @@ func (h *FrontchannelLogout) cascade(ctx context.Context, sid, iss string) int {
 
 // issuerMatches compares the iss query parameter against the expected
 // OP issuer URL with trailing-slash tolerance. Falcon-ID has been
-// observed in production to emit `https://id.hexxlock.com` (no slash)
-// on tokens but `https://id.hexxlock.com/` in some discovery responses;
+// observed in production to emit `https://id.example.com` (no slash)
+// on tokens but `https://id.example.com/` in some discovery responses;
 // the strict-equal compare here would otherwise drop legitimate
 // iframe loads from RP-initiated logout flows.
 //
 // MUST stay strict on scheme + host + path-modulo-trailing-slash so a
-// hostile `https://id.hexxlock.com.attacker.example/` doesn't pass.
+// hostile `https://id.example.com.attacker.example/` doesn't pass.
 func issuerMatches(got, want string) bool {
 	if want == "" {
 		// Mis-configured deployment — treat as strict-deny rather

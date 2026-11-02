@@ -27,7 +27,7 @@ func TestNewDualEmitsChainStream(t *testing.T) {
 		e.Emit(context.Background(), Record{
 			Event: EventRequestAllow,
 			Sub:   "test-sub",
-			Route: "internal.example.com",
+			Route: "example.internal.example.com",
 		})
 	}
 

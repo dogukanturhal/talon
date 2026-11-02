@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (locked 2026-04-26)
 - **Date:** 2026-04-26
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Supersedes:** N/A
 - **Refines:** ADR 0001 §5.c (high-level cookie + session table)
 - **Related:** ADR 0003 (planned, TalonRoute CRD); ADR 0005 (planned, step-up MFA)
@@ -36,14 +36,14 @@ should not recur in Talon. This ADR is the contract a reviewer holds
 A correctly-emitted Talon session cookie on the wire reads:
 
 ```
-Set-Cookie: talon_session=<UUIDv4>; Domain=internal.example.com; Path=/; Expires=<RFC1123>; Max-Age=28800; HttpOnly; Secure; SameSite=Lax
+Set-Cookie: talon_session=<UUIDv4>; Domain=.internal.example.com; Path=/; Expires=<RFC1123>; Max-Age=28800; HttpOnly; Secure; SameSite=Lax
 ```
 
 | Token | Value | Why this exact value |
 |-------|-------|----------------------|
 | Cookie name | `talon_session` | Distinct from `_pomerium_*`, `_oauth2_proxy*`, `falcon_idp_session`. Single-cookie design (no `_csrf` sibling) — CSRF is handled inside the encrypted blob. |
 | Cookie value | UUIDv4 hex with dashes (36 ASCII chars) | Opaque to client; lookup key into Redis. UUIDv4 is sufficient (122-bit randomness; collision probability over 1 year × 10⁶ admins is < 2⁻⁴⁰ per the birthday bound). No JWT, no signed value — the cookie is *only* an ID. |
-| `Domain=` | `internal.example.com` (with leading dot) | Per RFC 6265 §5.3.6: domain must be a suffix of the host that issued the cookie. Talon issues from `internal.example.com`; `internal.example.com` is a valid suffix and shares with all sibling admin hosts. **Must not** be `.hexxlock.com` (would also match the customer tier — privilege spillover) and **must not** be a cluster-internal hostname (browsers reject — see internal engineering notes). |
+| `Domain=` | `.internal.example.com` (with leading dot) | Per RFC 6265 §5.3.6: domain must be a suffix of the host that issued the cookie. Talon issues from `auth.internal.example.com`; `.internal.example.com` is a valid suffix and shares with all sibling admin hosts. **Must not** be `.example.com` (would also match the customer tier — privilege spillover) and **must not** be a cluster-internal hostname (browsers reject — see internal engineering notes). |
 | `Path=` | `/` | Cookie must accompany every admin-tier request. |
 | `Expires=` + `Max-Age=` | both, set to creation time + 8 h (28800 s) | Both attributes for compatibility (Expires for HTTP/1.0-ish behaviour; Max-Age preferred per RFC 6265 §5.2.1). Sliding refresh updates *both* on every successful request — see §5.3. |
 | `HttpOnly` | present | Mitigates XSS-driven session theft from upstream apps that may render user-controlled HTML (Grafana annotations, Argo CD app names, etc.). |
@@ -52,10 +52,10 @@ Set-Cookie: talon_session=<UUIDv4>; Domain=internal.example.com; Path=/; Expires
 
 ### 3.2 Anti-patterns (forbidden)
 
-- `Domain=.hexxlock.com` — over-broad, cookie spills to the customer tier.
-- `Domain=internal.example.com` (no leading dot, exact host) — modern
+- `Domain=.example.com` — over-broad, cookie spills to the customer tier.
+- `Domain=auth.internal.example.com` (no leading dot, exact host) — modern
   browsers treat it the same as a leading-dot domain *for the issuing
-  host* but reject other admin-tier subdomains. Use `internal.example.com`.
+  host* but reject other admin-tier subdomains. Use `.internal.example.com`.
 - `Domain=` set to a cluster-internal hostname (`*.svc.cluster.local`,
   the falcon-id BFF bug). Talon must read `Host:` from the original
   client request via Traefik's `X-Forwarded-Host`, **not** from
@@ -78,15 +78,15 @@ Set-Cookie: talon_session=<UUIDv4>; Domain=internal.example.com; Path=/; Expires
   "email": "alice@example.com",
   "groups": ["platform-admin", "sre-oncall"],
   "tenant_id": "00000000-0000-0000-0000-000000000002",
-  "iss": "https://id.hexxlock.com",
+  "iss": "https://id.example.com",
   "amr": ["pwd", "mfa"],
   "iat": 1745654400,
   "exp": 1745683200,
   "last_touched": 1745655001,
   "src_ip": "203.0.113.45",
   "ua_hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "csrf_token": "8f7a2b9c4d3e1f6a5b8c7d4e3f2a1b9c", <!-- gitleaks:allow — documentation example -->
-  "id_token_jti": "eyJhbGciOi...truncated-32chars...", <!-- gitleaks:allow — documentation example -->
+  "csrf_token": "8f7a2b9c4d3e1f6a5b8c7d4e3f2a1b9c",
+  "id_token_jti": "eyJhbGciOi...truncated-32chars...",
   "refresh_token_enc": "AES-GCM(refresh_token)"
 }
 ```
@@ -218,7 +218,7 @@ DELETE /auth/logout (Talon's own endpoint, requires CSRF token)
 2. SETEX talon:revoked:<uuid> <session.exp - now> "1"
 3. DEL talon:session:<uuid>
 4. ZREM talon:revoke-by-sub:<sub> <uuid>
-5. Set-Cookie: talon_session=; Max-Age=0; Domain=internal.example.com; ...
+5. Set-Cookie: talon_session=; Max-Age=0; Domain=.internal.example.com; ...
 6. Optionally: Falcon-ID RP-Initiated Logout to revoke the IdP session as well.
 7. 302 → /auth/logged-out (with full HTML body per ADR 0001 §5.d)
 ```
@@ -323,7 +323,7 @@ When a session-blob field changes shape:
 | Redis unreachable on write (sliding refresh) | Refresh silently dropped; session remains valid until exp | Acceptable; refresh retries on next request. |
 | AES-GCM auth-tag failure | Decryption returns error before plaintext exposed | Audit, force OIDC re-handshake, set `talon:revoked:<uuid>` to prevent retry-attacks. |
 | Cookie domain mismatch (browser drops cookie) | Every request acts cookieless → infinite OIDC loop | Talon detects this via "OIDC succeeded but next request is cookieless" pattern; emits a `cookie_drop_loop` metric and degrades to a hard error 400 with an HTML body explaining the misconfiguration. The unit test for §3.1 asserts this case during CI. |
-| Clock drift between Talon and Falcon-ID | id_token `exp` validated incorrectly | NTP via chrony on every node (already in place, `infrastructure-iac/.../ntp.tf`). Talon allows 30s clock skew on `iat` / `exp` checks. |
+| Clock drift between Talon and Falcon-ID | id_token `exp` validated incorrectly | NTP via chrony on every node (already in place, `<your-iac-repo>/.../ntp.tf`). Talon allows 30s clock skew on `iat` / `exp` checks. |
 | Vault outage during key rotation | New key not delivered; old key stays current | Tolerant — current state stays valid until next ExternalSecret reconcile. Rotation deferred. |
 
 ## 8. Test surface (asserted in CI)
@@ -339,7 +339,7 @@ When a session-blob field changes shape:
 - Integration: `test/integration/session_lifecycle_test.go` against a
   miniredis backend, full Create→Read→Refresh→Revoke cycle.
 - iOS: every phase exit re-verifies the wire-format `Set-Cookie`
-  shape from a real iPhone capture, per `e2e/ios/README.md`.
+  shape from a real iPhone capture, per an unpublished e2e test.
 
 ## 9. References
 

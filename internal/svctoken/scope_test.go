@@ -82,39 +82,39 @@ func TestScopeAuthorisesHostVerb(t *testing.T) {
 		want  bool
 	}{
 		// Exact match
-		{"exact match read", "talon:git.example.com:read", "git.example.com", VerbRead, true},
-		{"exact match write", "talon:git.example.com:write", "git.example.com", VerbWrite, true},
+		{"exact match read", "talon:github.com:read", "github.com", VerbRead, true},
+		{"exact match write", "talon:github.com:write", "github.com", VerbWrite, true},
 		{"exact match pull", "talon:registry.example.com:pull", "registry.example.com", VerbPull, true},
 		{"exact match push", "talon:registry.example.com:push", "registry.example.com", VerbPush, true},
 
 		// Case-insensitive host
-		{"host case-insensitive", "talon:git.example.com:read", "git.example.com", VerbRead, true},
-		{"host case-insensitive request", "talon:Git.EXAMPLE.com:read", "other.example.com", VerbRead, false /* request host not covered by scope */},
+		{"host case-insensitive", "talon:GitHub.COM:read", "github.com", VerbRead, true},
+		{"host case-insensitive request", "talon:github.com:read", "GitHub.COM", VerbRead, false /* request host not pre-normalised; caller responsibility */},
 
 		// admin verb
-		{"admin grants read", "talon:git.example.com:admin", "git.example.com", VerbRead, true},
-		{"admin grants write", "talon:git.example.com:admin", "git.example.com", VerbWrite, true},
+		{"admin grants read", "talon:github.com:admin", "github.com", VerbRead, true},
+		{"admin grants write", "talon:github.com:admin", "github.com", VerbWrite, true},
 		{"admin grants pull", "talon:registry.example.com:admin", "registry.example.com", VerbPull, true},
 		{"admin grants push", "talon:registry.example.com:admin", "registry.example.com", VerbPush, true},
 
 		// Wildcard host
-		{"wildcard host read", "talon:*:read", "git.example.com", VerbRead, true},
+		{"wildcard host read", "talon:*:read", "github.com", VerbRead, true},
 		{"wildcard host other host", "talon:*:read", "registry.example.com", VerbRead, true},
 
 		// Break-glass
-		{"break-glass any host any verb", "talon:proxy", "git.example.com", VerbWrite, true},
+		{"break-glass any host any verb", "talon:proxy", "github.com", VerbWrite, true},
 		{"break-glass other host", "talon:proxy", "registry.example.com", VerbPush, true},
 
 		// Negative — wrong verb
-		{"wrong verb", "talon:git.example.com:read", "git.example.com", VerbWrite, false},
-		{"wrong host", "talon:registry.example.com:read", "git.example.com", VerbRead, false},
+		{"wrong verb", "talon:github.com:read", "github.com", VerbWrite, false},
+		{"wrong host", "talon:registry.example.com:read", "github.com", VerbRead, false},
 
 		// Negative — malformed
-		{"empty scope", "", "git.example.com", VerbRead, false},
-		{"wrong prefix", "iap:git.example.com:read", "git.example.com", VerbRead, false},
-		{"too few parts", "talon:git.example.com", "git.example.com", VerbRead, false},
-		{"too many parts", "talon:git.example.com:read:extra", "git.example.com", VerbRead, false},
-		{"plain word", "admin", "git.example.com", VerbRead, false},
+		{"empty scope", "", "github.com", VerbRead, false},
+		{"wrong prefix", "iap:github.com:read", "github.com", VerbRead, false},
+		{"too few parts", "talon:github.com", "github.com", VerbRead, false},
+		{"too many parts", "talon:github.com:read:extra", "github.com", VerbRead, false},
+		{"plain word", "admin", "github.com", VerbRead, false},
 
 		// Pull vs read distinction (defense-in-depth)
 		{"pull doesn't grant read", "talon:registry.example.com:pull", "registry.example.com", VerbRead, false},
@@ -137,8 +137,8 @@ func TestExpectedAudienceForHost(t *testing.T) {
 		host string
 		want string
 	}{
-		{"git.example.com", "https://git.example.com"},
-		{"git.example.com", "https://git.example.com"},
+		{"github.com", "https://github.com"},
+		{"github.com", "https://github.com"},
 		{" registry.example.com ", "https://registry.example.com"},
 		{"", ""},
 	}
@@ -153,13 +153,13 @@ func TestExpectedAudienceForHost(t *testing.T) {
 
 func TestClaimsAnyScopeMatchingHostVerb(t *testing.T) {
 	c := &Claims{Scopes: []string{
-		"talon:git.example.com:read",
+		"talon:github.com:read",
 		"talon:registry.example.com:pull",
 	}}
-	if !c.AnyScopeMatchingHostVerb("git.example.com", VerbRead) {
+	if !c.AnyScopeMatchingHostVerb("github.com", VerbRead) {
 		t.Error("expected match for gitlab:read")
 	}
-	if c.AnyScopeMatchingHostVerb("git.example.com", VerbWrite) {
+	if c.AnyScopeMatchingHostVerb("github.com", VerbWrite) {
 		t.Error("unexpected match for gitlab:write")
 	}
 	if !c.AnyScopeMatchingHostVerb("registry.example.com", VerbPull) {

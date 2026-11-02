@@ -41,16 +41,16 @@ func boolPtr(b bool) *bool { return &b }
 
 // protectedHostSuffixes is the list of admin-tier DNS zones a TalonRoute's
 // spec.host may live in. Sourced from TALON_PROTECTED_HOST_SUFFIXES env
-// var (comma-separated, e.g. "internal.example.com,.apps.hexxlock.com").
-// Defaults to "internal.example.com" when unset — preserves the original
+// var (comma-separated, e.g. ".internal.example.com,.apps.example.com").
+// Defaults to ".internal.example.com" when unset — preserves the original
 // single-zone behavior. Multi-zone support added 2026-05-03 to enable
-// Track 2 Phase 7 migration onto the apps.hexxlock.com subzone.
-var protectedHostSuffixes = parseSuffixEnv("TALON_PROTECTED_HOST_SUFFIXES", []string{"internal.example.com"})
+// Track 2 Phase 7 migration onto the apps.example.com subzone.
+var protectedHostSuffixes = parseSuffixEnv("TALON_PROTECTED_HOST_SUFFIXES", []string{".internal.example.com"})
 
 // clientlessHostSuffixes is the access-zone DNS suffix list for the
 // agentless clientless tier (ADR 0044). Sourced from
 // TALON_CLIENTLESS_HOST_SUFFIXES (comma-separated, e.g.
-// ".access.hexxlock.com"). Unset = clientless tier disabled (no access-zone
+// ".access.example.com"). Unset = clientless tier disabled (no access-zone
 // hosts admitted), preserving existing deployments unchanged on upgrade.
 // A TalonRoute whose spec.host ends with one of these suffixes is admitted
 // (see allowedHostSuffixes) so the access zone is a first-class route class
@@ -81,8 +81,8 @@ func parseSuffixEnv(name string, def []string) []string {
 // allowedHostSuffixes returns the union of the admin-tier protected zones
 // and the clientless access zones — the full set a TalonRoute's spec.host
 // may live in. The access zone (ADR 0044) is admitted on equal footing so
-// an operator can declare a TalonRoute on `<app>.access.hexxlock.com`
-// exactly as they would on `<app>internal.example.com`; the router decides
+// an operator can declare a TalonRoute on `<app>.access.example.com`
+// exactly as they would on `<app>.internal.example.com`; the router decides
 // the channel from the same suffix list at request time.
 func allowedHostSuffixes() []string {
 	out := make([]string, 0, len(protectedHostSuffixes)+len(clientlessHostSuffixes))
@@ -108,9 +108,9 @@ type TalonRouteReconciler struct {
 	SecurityPolicyTranslator SecurityPolicyTranslatorConfig
 }
 
-// +kubebuilder:rbac:groups=gateway.talon.hexxlock.com,resources=talonroutes,verbs=get;list;watch
-// +kubebuilder:rbac:groups=gateway.talon.hexxlock.com,resources=talonroutes/status,verbs=get;patch;update
-// +kubebuilder:rbac:groups=gateway.talon.hexxlock.com,resources=talonroutes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=gateway.talon.example.com,resources=talonroutes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=gateway.talon.example.com,resources=talonroutes/status,verbs=get;patch;update
+// +kubebuilder:rbac:groups=gateway.talon.example.com,resources=talonroutes/finalizers,verbs=update
 
 // Reconcile is the per-event entrypoint.
 func (r *TalonRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -391,7 +391,7 @@ func (r *TalonRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // leader pod runs it, the non-leader pod has empty upstreams and
 // returns HTTP 404 for every request the Service load-balances to
 // it. Confirmed live 2026-05-12: 2-replica deploy split 50/50 across
-// {1211 routes, 0 routes} pods → intermittent erp.hexxlock.com 404s
+// {1211 routes, 0 routes} pods → intermittent erp.example.com 404s
 // + every browser tab that hit the empty replica got a broken page.
 //
 // `cv.Runner` (continuous verification) DOES need leader election

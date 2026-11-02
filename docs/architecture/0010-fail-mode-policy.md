@@ -7,7 +7,7 @@
 
 ## Context
 
-Talon is the sole IAP for `internal.example.com` (17 admin-tier hosts)
+Talon is the sole IAP for `*.internal.example.com` (17 admin-tier hosts)
 and the customer-tier ext_authz PDP for Envoy Gateway. Every `Verify`
 call ultimately depends on at least one of:
 
@@ -269,10 +269,10 @@ routes. Review it like a credential-lifetime knob.
 ### Operational verification
 
 Two chaos drills (run quarterly, tracked in
-`docs/operations/runbooks/fail-mode-drills.md` — to be added):
+the fail-mode drill runbook (planned)):
 
 **Drill 1 — Falcon-ID outage.** Scale Falcon-ID Deployment to 0. Run
-`curl https://internal.example.com/`. Expected:
+`curl https://argocd.internal.example.com/`. Expected:
 
 - During the JWKS stale-cache window (≤1h): existing sessions
   continue to work (cookies verified against cached JWKS), new

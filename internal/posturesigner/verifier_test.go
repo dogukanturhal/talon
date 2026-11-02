@@ -58,7 +58,7 @@ type leafOptions struct {
 	notBefore  time.Time
 	notAfter   time.Time
 	ekus       []x509.ExtKeyUsage
-	spiffeURI  string // override the default spiffe://hexxlock.com/device/<uuid>
+	spiffeURI  string // override the default spiffe://example.com/device/<uuid>
 	wrongCA    bool   // sign with a fresh unrelated key (not jess-device-ca)
 }
 
@@ -279,7 +279,7 @@ func TestNewDeviceCertVerifier_NilPool(t *testing.T) {
 // TestDeviceCertVerifier_RealVaultPKIShape verifies the full happy path
 // matches the certificate shape that jess-device-ca (Vault PKI) mints:
 //   - Root CA directly signs leaf (no intermediates)
-//   - SPIFFE SAN URI = spiffe://hexxlock.com/device/<uuid>
+//   - SPIFFE SAN URI = spiffe://example.com/device/<uuid>
 //   - EKU = ClientAuth only
 //   - 24h TTL (verify options work at any point in that window)
 func TestDeviceCertVerifier_RealVaultPKIShape(t *testing.T) {

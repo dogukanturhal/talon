@@ -48,7 +48,7 @@ func TestIsMachine(t *testing.T) {
 			Claims{
 				Subject:  "svc-svc-npm-dev-dogukanturhal",
 				ClientID: "svc-svc-npm-dev-dogukanturhal",
-				Scopes:   []string{"talon:internal.example.com:read"},
+				Scopes:   []string{"talon:npm.internal.example.com:read"},
 			},
 			true,
 		},

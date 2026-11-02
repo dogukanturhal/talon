@@ -1,0 +1,18 @@
+{
+  "interactiveLogin": true,
+  "tokenCallbacks": [
+    {
+      "issuerId": "default",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        {
+          "requestParam": "scope",
+          "match": "*",
+          "claims": {
+            "groups": ["demo-user"]
+          }
+        }
+      ]
+    }
+  ]
+}

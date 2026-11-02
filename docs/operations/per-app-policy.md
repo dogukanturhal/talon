@@ -5,7 +5,7 @@
 > `deploy/helm/talon/crds/talonroute.yaml` and the router enforcement
 > in `internal/router/perhost.go`.
 >
-> **Audience**: platform engineers authoring `internal.example.com` and
+> **Audience**: platform engineers authoring `*.internal.example.com` and
 > customer-tier `TalonRoute` CRs. SOC analysts reading audit-stream
 > events tagged with the new reasons.
 
@@ -49,13 +49,13 @@ argocd is editor-tier with destructive sync power. Tier-1 standard:
 1h absolute, 15m idle, IP-rebind on, no device-claim gate yet.
 
 ```yaml
-apiVersion: gateway.talon.hexxlock.com/v1alpha1
+apiVersion: gateway.talon.example.com/v1alpha1
 kind: TalonRoute
 metadata:
   name: argocd-ops
   namespace: argocd
 spec:
-  host: internal.example.com
+  host: argocd.internal.example.com
   upstream: { service: argocd-server, port: 80 }
   permission: editor
   allowedGroups: [platform_admin]
@@ -77,11 +77,11 @@ field — `false` is the default).
 ```bash
 # Count would-have-denied events for a specific host across the soak window:
 ssh -i ~/.ssh/infra-key hexxlock@10.0.70.100 \
-  "sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+  "sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /path/to/kubeconfig \
      -n talon logs deploy/talon-talon --since=168h" \
   | grep '"event":"request.deny"' \
   | grep '"would_have_denied_' \
-  | grep '"route":"internal.example.com"' \
+  | grep '"route":"argocd.internal.example.com"' \
   | jq -r '.reason' | sort | uniq -c | sort -rn
 ```
 
@@ -141,12 +141,12 @@ real denies, or `reason=~ would_have_denied_*` for soak signal.
 
 ```json
 // real per-host expiry deny:
-{"event":"request.deny","reason":"per_host_expired","route":"internal.example.com",
+{"event":"request.deny","reason":"per_host_expired","route":"argocd.internal.example.com",
  "sub":"...","src_ip":"10.0.50.5","sso_chain_id":"...","decision_id":"..."}
 
 // audit-only "would have denied" during soak:
 {"event":"request.deny","reason":"would_have_denied_per_host_idle_timeout",
- "route":"internal.example.com","sub":"...","sso_chain_id":"...",
+ "route":"grafana.internal.example.com","sub":"...","sso_chain_id":"...",
  "decision_id":"..."}
 ```
 
@@ -156,7 +156,7 @@ Fail-closed. The router emits:
 
 ```json
 {"event":"request.deny","reason":"device_claim_missing",
- "route":"internal.example.com","sub":"..."}
+ "route":"vault.internal.example.com","sub":"..."}
 ```
 
 Wazuh rule 200042 (or your equivalent) should alert on this with
@@ -218,5 +218,5 @@ kubectl get talonroute -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.
 - `deploy/helm/talon/crds/talonroute.yaml` — CRD OpenAPIv3 schema
 - `internal/controller/talonroute_controller.go` `validateRoute()` —
   reconcile-time validation
-- `<gitops-bootstrap-repo>/docs/audits/2026-Q2-tier1-iam-iap-audit.md`
+- the internal Q2 2026 IAM/IAP audit
   IAP-11 — closed gap row + IAP-01 schema-landed note

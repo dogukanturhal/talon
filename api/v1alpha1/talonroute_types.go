@@ -4,7 +4,7 @@
 // follows ADR 0003: never delete fields at v1alpha1; rename / shape
 // changes ship as v1beta1 with a conversion webhook.
 //
-// +groupName=gateway.talon.hexxlock.com
+// +groupName=gateway.talon.example.com
 package v1alpha1
 
 import (
@@ -43,7 +43,7 @@ type Upstream struct {
 
 // TalonRouteSpec is the operator-authored desired state.
 type TalonRouteSpec struct {
-	// Host is the public host the IngressRoute matches on (e.g. internal.example.com).
+	// Host is the public host the IngressRoute matches on (e.g. prometheus.internal.example.com).
 	Host string `json:"host"`
 	// Upstream is the in-cluster target.
 	Upstream Upstream `json:"upstream"`

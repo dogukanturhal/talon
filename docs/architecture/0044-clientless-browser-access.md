@@ -40,7 +40,7 @@ audited and CAEP-revocable — **without** requiring the desktop agent.
 Two distinct surfaces, sharing the auth/audit spine:
 
 1. **Clientless HTTP app access** (Phase 1 — smallest, highest value):
-   a per-app reverse proxy at `https://<app>.access.hexxlock.com`. Talon
+   a per-app reverse proxy at `https://<app>.access.example.com`. Talon
    already terminates IAP for `*.ops`/`*.apps`; this extends the model to
    an `access.` zone whose sessions are explicitly tagged
    `channel=clientless` (no device cert) so policy can apply a stricter
@@ -79,7 +79,7 @@ device-cert mTLS posture path. We do NOT pretend otherwise. Instead:
 
 ```
 Browser (no agent)
-  │  https://<app>.access.hexxlock.com   (or /access/desktop/<target>)
+  │  https://<app>.access.example.com   (or /access/desktop/<target>)
   ▼
 Traefik (access zone)  ──►  Talon IAP  ──► Falcon-ID OIDC + WebAuthn step-up
   │                                          (channel=clientless, AAL2/3)

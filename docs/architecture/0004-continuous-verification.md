@@ -2,7 +2,7 @@
 
 - **Status:** Stub (filling during Gap 2 — week 2 of Tier-1 gap-closure)
 - **Date:** 2026-04-27 (stub)
-- **Deciders:** dogukanturhal, Claude Opus 4.7
+- **Deciders:** dogukanturhal
 - **Refines:** ADR 0001 §6, ADR 0002 §5.6
 - **Related:** `HANDOFF_TALON_TIER1_GAP_CLOSURE_PROMPT.md` Gap 2;
   ADR 0007 (SDK contract), ADR 0005 (forward-auth)

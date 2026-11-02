@@ -21,10 +21,10 @@ metadata:
     app.kubernetes.io/component: identity-aware-proxy
 spec:
   secretName: talon-conversion-webhook-tls
-  # commonName is REQUIRED by the production example-tenant
+  # commonName is REQUIRED by the production exampletenant
   # ClusterIssuer (Vault PKI role pki_root/sign/<role> with
   # require_cn=true; verified live 2026-06-01 against
-  # talon-talon-tls which has commonName: internal.example.com).
+  # talon-talon-tls which has commonName: auth.internal.example.com).
   # Without it, cert-manager retries with "the common_name field
   # is required" and the Secret never materialises.
   commonName: talon-conversion-webhook.{{ .Release.Namespace }}.svc

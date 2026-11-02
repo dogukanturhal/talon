@@ -27,7 +27,7 @@
 //  - Unrecognised versions return a per-object failure WITHOUT
 //    poisoning the entire ConversionReview — kube-apiserver retries
 //    and surfaces the error per resource, not cluster-wide.
-//  - Rollback: `kubectl patch crd talonroutes.gateway.talon.hexxlock.
+//  - Rollback: `kubectl patch crd talonroutes.gateway.talon.example.
 //    com --type=json -p='[{"op":"remove","path":"/spec/conversion"}]'`
 //    removes the webhook strategy entirely; v1alpha1 stays served
 //    + storage, v1beta1 reads start returning 415 errors but

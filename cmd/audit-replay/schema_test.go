@@ -27,7 +27,7 @@ func TestSchemaValidator_ValidRecord(t *testing.T) {
 		// minimal: just ts
 		`{"ts":"2026-06-07T10:00:00Z"}`,
 		// full
-		`{"ts":"2026-06-07T10:00:00.123456789Z","seq":42,"prev_hash":"abc","hash":"def","event":"access_granted","sub":"01H","email":"a@b","tenant_id":"t1","route":"internal.example.com","method":"GET","path":"/","decision":"allow","reason":"ok","src_ip":"10.0.0.1","session_id":"s1","permission":"argocd.app.get","iss":"https://id.hexxlock.com","decision_id":"d1","sso_chain_id":"sso1","talon_version":"v1.0.0"}`,
+		`{"ts":"2026-06-07T10:00:00.123456789Z","seq":42,"prev_hash":"abc","hash":"def","event":"access_granted","sub":"01H","email":"a@b","tenant_id":"t1","route":"argocd.internal.example.com","method":"GET","path":"/","decision":"allow","reason":"ok","src_ip":"10.0.0.1","session_id":"s1","permission":"argocd.app.get","iss":"https://id.example.com","decision_id":"d1","sso_chain_id":"sso1","talon_version":"v1.0.0"}`,
 		// additionalProperties: true — tolerates unknown fields
 		`{"ts":"2026-06-07T10:00:00Z","custom_field":"value"}`,
 	}

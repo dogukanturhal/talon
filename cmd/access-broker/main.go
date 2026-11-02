@@ -55,12 +55,12 @@ func main() {
 	fs := flag.NewFlagSet("access-broker", flag.ExitOnError)
 	listen := fs.String("listen", ":8080", "address to listen on for the broker HTTP/WebSocket endpoint")
 	metricsListen := fs.String("metrics-listen", ":9090", "address to listen on for /metrics (Prometheus)")
-	jwksURL := fs.String("jwks-url", "https://internal.example.com/.well-known/jwks.json",
+	jwksURL := fs.String("jwks-url", "https://auth.internal.example.com/.well-known/jwks.json",
 		"Talon JWKS endpoint used to verify the X-Talon-Identity-Token")
-	issuer := fs.String("issuer", "https://internal.example.com",
+	issuer := fs.String("issuer", "https://auth.internal.example.com",
 		"expected iss claim on the IAP identity token (must match Talon's signer issuer)")
 	audience := fs.String("audience", "",
-		"expected aud claim on the IAP identity token (this broker's access-zone host, e.g. ssh.access.hexxlock.com) — REQUIRED")
+		"expected aud claim on the IAP identity token (this broker's access-zone host, e.g. ssh.access.example.com) — REQUIRED")
 	brokerAddr := fs.String("jess-broker-addr", "",
 		"jess SSH-broker address (ADR 0049, mTLS) — production dial is STUBBED until jess exposes it")
 	jessControllerAddr := fs.String("jess-controller-addr", "",
@@ -72,10 +72,10 @@ func main() {
 	jessCAPool := fs.String("jess-ca", "",
 		"CA bundle (PEM) used to verify the jess controller operator server cert")
 	clientlessAudience := fs.String("clientless-assertion-audience", "",
-		"the jess clientless audience the Talon-vouched assertion is scoped to (ADR 0050, e.g. https://internal.example.com/clientless) — REQUIRED to wire the SQL console")
+		"the jess clientless audience the Talon-vouched assertion is scoped to (ADR 0050, e.g. https://jess.internal.example.com/clientless) — REQUIRED to wire the SQL console")
 	iapSignerKey := fs.String("iap-signer-key", "",
 		"PEM path of Talon's IAP identity-token RSA private key (mints the clientless-access assertion, jess ADR 0050). REQUIRED to wire the SQL console.")
-	iapSignerIssuer := fs.String("iap-signer-issuer", "https://internal.example.com",
+	iapSignerIssuer := fs.String("iap-signer-issuer", "https://auth.internal.example.com",
 		"iss claim for the minted clientless assertion (must match Talon's IAP signer issuer / jess's expected Talon issuer)")
 	k8sBrokerAddr := fs.String("jess-k8s-broker-addr", "",
 		"jess k8s-broker address (ADR 0049/0044 Phase 4, mTLS) — kubectl exec/logs dial is STUBBED until jess exposes it")

@@ -13,7 +13,7 @@ import rego.v1
 
 # Synthetic fixtures keyed for readability.
 fresh_posture_corp := {
-	"iss": "https://posture.hexxlock.com",
+	"iss": "https://posture.example.com",
 	"subject": "device:tpm:abc123",
 	"iat": time.now_ns() / 1000000000 - 60,  # 60s ago — fresh
 	"compliance": {
@@ -25,7 +25,7 @@ fresh_posture_corp := {
 }
 
 fresh_posture_byod := {
-	"iss": "https://posture.hexxlock.com",
+	"iss": "https://posture.example.com",
 	"subject": "device:apple-app-attest:xyz",
 	"iat": time.now_ns() / 1000000000 - 60,
 	"compliance": {
@@ -37,7 +37,7 @@ fresh_posture_byod := {
 }
 
 stale_posture_corp := {
-	"iss": "https://posture.hexxlock.com",
+	"iss": "https://posture.example.com",
 	"subject": "device:tpm:abc123",
 	"iat": time.now_ns() / 1000000000 - 3600,  # 1h ago — stale for corp
 	"compliance": {
@@ -82,7 +82,7 @@ req := {
 }
 
 route_medium := {
-	"host": "internal.example.com",
+	"host": "grafana.internal.example.com",
 	"permission": "viewer",
 }
 

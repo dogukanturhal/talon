@@ -2,11 +2,11 @@
 
 **Status:** Phase A live · Phase B ready · Phase C ready (opt-in)
 **Date:** 2026-05-13
-**Supersedes:** [ADR 0001 §7.a — unsigned X-Talon-* headers](./0001-pep-design.md) (extends, does not replace)
+**Supersedes:** [ADR 0001 §7.a — unsigned X-Talon-* headers](./0001-overview.md) (extends, does not replace)
 
 ## Context
 
-Talon is the IAP for `internal.example.com`. Before this ADR, identity was
+Talon is the IAP for `*.internal.example.com`. Before this ADR, identity was
 conveyed to upstream services via unsigned `X-Talon-*` HTTP headers:
 
 ```
@@ -50,15 +50,15 @@ Talon emits an RS256-signed JWT on `X-Talon-Identity-Token` in addition
 to the existing unsigned `X-Talon-*` headers. Upstreams that consume
 identity (the `@hexxlock/falcon-id-client/nextjs` SDK + any future
 stock-OAuth2 service) verify the JWT cryptographically against Talon's
-JWKS endpoint at `https://internal.example.com/.well-known/jwks.json`.
+JWKS endpoint at `https://auth.internal.example.com/.well-known/jwks.json`.
 
 ### Claims
 
 ```json
 {
-  "iss": "https://internal.example.com",
+  "iss": "https://auth.internal.example.com",
   "sub": "5e163cc4-87aa-4c0c-8985-db1134f8b436",
-  "aud": "internal.example.com",
+  "aud": "falcon.internal.example.com",
   "iat": 1715712000,
   "exp": 1715712060,
   "jti": "a3f0c6e2-1d4b-4e8f-9c2a-7e5b9d3f1a02",
@@ -108,7 +108,7 @@ Per [RFC 8725 (JWT BCP)](https://datatracker.ietf.org/doc/html/rfc8725):
 ### JWKS endpoint
 
 - Published at `/.well-known/jwks.json` on Talon's auth host
-  (`internal.example.com`).
+  (`auth.internal.example.com`).
 - `Content-Type: application/jwk-set+json`.
 - `Cache-Control: public, max-age=300` — 5 minutes matches Cloudflare
   Access and Google IAP defaults.
@@ -216,7 +216,7 @@ vault kv put example/platform/talon/iap-identity-key key=@/tmp/talon-iap.pem
 shred -u /tmp/talon-iap.pem
 
 # 4. Verify JWKS endpoint responds within ~30s of Talon pod start
-curl -s https://internal.example.com/.well-known/jwks.json | jq '.keys[0] | {kid, alg, use}'
+curl -s https://auth.internal.example.com/.well-known/jwks.json | jq '.keys[0] | {kid, alg, use}'
 # Expected: {"kid": "<base64url>", "alg": "RS256", "use": "sig"}
 ```
 
@@ -334,9 +334,9 @@ platform. Two reference implementations:
 import { createTalonIapVerifier } from '@hexxlock/falcon-id-client/nextjs'
 
 const verifier = createTalonIapVerifier({
-  jwksUrl: 'https://internal.example.com/.well-known/jwks.json',
-  expectedIssuer: 'https://internal.example.com',
-  expectedAudience: 'internal.example.com',
+  jwksUrl: 'https://auth.internal.example.com/.well-known/jwks.json',
+  expectedIssuer: 'https://auth.internal.example.com',
+  expectedAudience: 'falcon.internal.example.com',
 })
 const claims = await verifier.verifyRequest(request)  // claims | null
 ```
@@ -349,8 +349,8 @@ failure-mode handling):
 
 ```go
 v, err := identityjwt.NewVerifier(identityjwt.VerifierConfig{
-    JWKSURL:          "https://internal.example.com/.well-known/jwks.json",
-    ExpectedIssuer:   "https://internal.example.com",
+    JWKSURL:          "https://auth.internal.example.com/.well-known/jwks.json",
+    ExpectedIssuer:   "https://auth.internal.example.com",
     ExpectedAudience: "registry.example.com",
 })
 if err != nil { /* config defect */ }

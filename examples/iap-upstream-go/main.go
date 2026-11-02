@@ -21,9 +21,9 @@
 // Run locally
 // -----------
 //
-//	TALON_JWKS_URL='https://internal.example.com/.well-known/jwks.json' \
-//	TALON_EXPECTED_ISSUER='https://internal.example.com' \
-//	TALON_EXPECTED_AUDIENCE='internal.example.com' \
+//	TALON_JWKS_URL='https://auth.internal.example.com/.well-known/jwks.json' \
+//	TALON_EXPECTED_ISSUER='https://auth.internal.example.com' \
+//	TALON_EXPECTED_AUDIENCE='myservice.internal.example.com' \
 //	LISTEN_ADDR=':8080' \
 //	go run ./examples/iap-upstream-go
 //

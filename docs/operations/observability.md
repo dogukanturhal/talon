@@ -99,7 +99,7 @@ Each alert rule includes:
 
 - `internal/observability/` — code-side definitions
 - ADR 0001 §9 (operational implications), §10 (consequences)
-- `infrastructure-iac/observability/` — Prometheus rules + Grafana
+- `<your-iac-repo>/observability/` — Prometheus rules + Grafana
   dashboards (TODO: cross-link concrete files)
 
 ---

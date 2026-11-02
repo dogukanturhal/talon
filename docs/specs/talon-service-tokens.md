@@ -41,9 +41,9 @@ implementation stays small.
      exists and works
 2. **Crossplane `ServiceClientClaim` XRD** accepts `grantTypes:
    [client_credentials]` as default
-   (`<gitops-repo>/crossplane/serviceclient-xrd.yaml:128-138`).
+   (in the GitOps repository).
    Each machine consumer is a sibling YAML; **zero XRD changes**.
-3. **Falcon-ID JWKS** at `https://id.hexxlock.com/.well-known/jwks.json`
+3. **Falcon-ID JWKS** at `https://id.example.com/.well-known/jwks.json`
    (route at `falcon-id/cmd/routes_admin.go:1611`).
 4. **Talon `identityjwt.Verifier`** in `talon/internal/identityjwt/verifier.go`
    already encodes RS256-only + iss-pin + aud-pin + JWKS-cache + key
@@ -65,7 +65,7 @@ moves.
 Standard OAuth 2.0 `client_credentials` per RFC 6749 §4.4:
 
 ```
-POST https://id.hexxlock.com/oauth/token
+POST https://id.example.com/oauth/token
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic base64(client_id:client_secret)
 
@@ -89,7 +89,7 @@ JWT claims (per `oauth_provider_service_tokens.go:195-212`):
 
 ```json
 {
-  "iss": "https://id.hexxlock.com",
+  "iss": "https://id.example.com",
   "sub": "svc-argocd-repo-server",
   "aud": "https://github.com",
   "iat": 1748430000,
@@ -223,8 +223,8 @@ New `internal/svctoken/verifier.go`:
 
 ```go
 type Verifier struct {
-    issuer    string                       // https://id.hexxlock.com
-    jwksURL   string                       // https://id.hexxlock.com/.well-known/jwks.json
+    issuer    string                       // https://id.example.com
+    jwksURL   string                       // https://id.example.com/.well-known/jwks.json
     expectedAudience func(host string) string  // returns the expected `aud` for a Host header
     cache     *lru.Cache[string, *Claims]  // jti → claims, TTL-bounded
 }
@@ -390,7 +390,7 @@ After Phase 3 proves the pattern works for one consumer:
 2. `registry.example.com` same pattern.
 3. Issue an `LE` cert covering both names (cert-manager, DNS-01 via CF).
 4. Update Falcon-ID OIDC clients (`svc-gitlab`, `svc-harbor`) to add the
-   `internal.example.com/auth/callback` redirect URI — Talon dance ends
+   `auth.internal.example.com/auth/callback` redirect URI — Talon dance ends
    on Talon's auth host, then proxies to gitlab/harbor.
 5. Verify:
    - human browser at `https://github.com` → Talon → OIDC → GitLab UI
@@ -420,9 +420,9 @@ In rough order of risk/scope:
 ### Phase 6 — Optional: Path Y URL move
 
 Once Phase 4 + 5 are stable, IF there's still a desire to move human
-bookmarks to `internal.example.com`, the work is now small:
+bookmarks to `*.internal.example.com`, the work is now small:
 
-- Add Talon Server CR for `github.com` + `internal.example.com`
+- Add Talon Server CR for `github.com` + `harbor.internal.example.com`
   routing to the same backends
 - Update Falcon-ID client redirect URIs
 - Update docs / runbooks / alert links

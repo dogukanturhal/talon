@@ -16,12 +16,12 @@ func sampleRoute() *gatewayv1alpha1.TalonRoute {
 	return &gatewayv1alpha1.TalonRoute{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "talon",
-			Name:      "mearax-prod",
+			Name:      "app-prod",
 		},
 		Spec: gatewayv1alpha1.TalonRouteSpec{
-			Host: "mearax.hexxlock.com",
+			Host: "app.example.com",
 			Upstream: gatewayv1alpha1.Upstream{
-				Service: "mearax.example-platform",
+				Service: "app.example-platform",
 				Port:    80,
 			},
 		},
@@ -53,7 +53,7 @@ func TestDesiredSecurityPolicy_BasicShape(t *testing.T) {
 	if got, want := sp.GetNamespace(), "envoy-gateway-system"; got != want {
 		t.Errorf("namespace: got %q, want %q", got, want)
 	}
-	if got, want := sp.GetName(), "talon-talon-mearax-prod-securitypolicy"; got != want {
+	if got, want := sp.GetName(), "talon-talon-app-prod-securitypolicy"; got != want {
 		t.Errorf("name: got %q, want %q", got, want)
 	}
 }
@@ -64,8 +64,8 @@ func TestDesiredSecurityPolicy_Labels(t *testing.T) {
 	checks := map[string]string{
 		LabelManagedBy:      ManagedByValue,
 		LabelOwnerNamespace: "talon",
-		LabelOwnerName:      "mearax-prod",
-		LabelOwnerHost:      "mearax.hexxlock.com",
+		LabelOwnerName:      "app-prod",
+		LabelOwnerHost:      "app.example.com",
 	}
 	for k, want := range checks {
 		if got := labels[k]; got != want {
@@ -90,8 +90,8 @@ func TestDesiredSecurityPolicy_TargetRefShape(t *testing.T) {
 	if ref["kind"] != "HTTPRoute" {
 		t.Errorf("targetRef.kind: %v", ref["kind"])
 	}
-	if ref["name"] != "mearax-hexxlock-com-prod" {
-		t.Errorf("targetRef.name: %v (expected mearax-hexxlock-com-prod)", ref["name"])
+	if ref["name"] != "app-example-com-prod" {
+		t.Errorf("targetRef.name: %v (expected app-example-com-prod)", ref["name"])
 	}
 }
 
@@ -156,9 +156,9 @@ func TestHTTPRouteNameForHost(t *testing.T) {
 		host string
 		want string
 	}{
-		{"mearax.hexxlock.com", "mearax-hexxlock-com-prod"},
-		{"id.hexxlock.com", "id-hexxlock-com-prod"},
-		{"webhooks.hexxlock.com", "webhooks-hexxlock-com-prod"},
+		{"app.example.com", "app-example-com-prod"},
+		{"idp.example.com", "idp-example-com-prod"},
+		{"webhooks.example.com", "webhooks-example-com-prod"},
 		{"api.example.app", "api-example-app-prod"},
 	}
 	for _, c := range cases {

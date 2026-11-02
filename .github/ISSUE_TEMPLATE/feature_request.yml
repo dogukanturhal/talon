@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a change or an addition
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation first, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Talon to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried or considered instead?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Proxy / routing
+        - OIDC / sessions
+        - Authorization (SpiceDB, Rego)
+        - Device posture / continuous verification
+        - TalonRoute CRD / controller
+        - Helm chart
+        - Documentation
+        - Other
