@@ -107,7 +107,7 @@ func NewServer(v Verifier) *Server {
 // not cached by the filter by default (no `disable_request_body_buffering`
 // caching equivalent for the decision itself). Callers MUST NOT cache
 // the CheckResponse — every request gets a fresh decision per the
-// session-revocation invariant (ADR 0001 §7.b / Gap 2 streaming
+// session-revocation invariant (ADR 0001 §7.b and streaming
 // revocation).
 func (s *Server) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	in := buildVerifyInput(req)

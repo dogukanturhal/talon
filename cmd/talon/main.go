@@ -186,9 +186,9 @@ func main() {
 		spiceCachedClient = spicedb.NewCachedClient(spiceClient, spicedb.NewCache(1024, 30*time.Second))
 		// Wire decision-cache hit/miss/invalidate metrics + the
 		// session-revoke fan-out. Together these turn the cache from
-		// a TTL-only smoother into a Tier-1 perf primitive: revoked
+		// a TTL-only smoother into a performance primitive: revoked
 		// users lose access in ~0 s instead of waiting up to 30 s for
-		// the entry to age out (boot prompt §4 Gap 6).
+		// the entry to age out.
 		spiceCachedClient.SetMetrics(metrics)
 		// DDIL P3.11 — circuit breaker on the live SpiceDB CheckPermission
 		// so a sustained SpiceDB outage sheds load (fast-fail into the

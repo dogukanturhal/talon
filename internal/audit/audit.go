@@ -129,7 +129,7 @@ type Record struct {
 	Err          string `json:"err,omitempty"`
 	TalonVersion string `json:"talon_version,omitempty"`
 
-	// DecisionID — per-request correlation handle (boot prompt §4 Gap 4).
+	// DecisionID — per-request correlation handle.
 	// Auto-populated from ctx via Emit if unset by the caller; the
 	// SOC analyst greps Wazuh on this field to reconstruct everything
 	// that happened during one auth decision.

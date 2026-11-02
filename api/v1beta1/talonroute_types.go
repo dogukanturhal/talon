@@ -200,7 +200,7 @@ type Policy struct {
 
 	// PolicyRego is an opt-in OPA Rego module that runs AFTER the
 	// role filter + SpiceDB CheckPermission both ALLOW. Can only
-	// NARROW access — never broaden. Tier-1 Gap 5 escape hatch.
+	// NARROW access — never broaden. This is the per-route Rego escape hatch.
 	// See v1alpha1.TalonRouteSpec.PolicyRego for the contract.
 	// +optional
 	PolicyRego string `json:"policyRego,omitempty"`

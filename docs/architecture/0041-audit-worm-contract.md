@@ -10,8 +10,7 @@
 Talon's audit log is the durable record of every PDP decision, every
 session lifecycle event, every Rego deny reason, every CAEP SET sent
 or received. Today the audit emitter writes structured rows to
-`audit-archive` MinIO with WORM object-lock (locked 2026-04-27).
-What is missing:
+`audit-archive` MinIO with WORM object-lock (locked 2026-04-27). What's missing for tier-1:
 
 1. **Codified JSON contract** — operators currently rely on field
    names matching `internal/audit/event.go` source-of-truth; no

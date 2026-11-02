@@ -59,7 +59,7 @@ func From(ctx context.Context) *slog.Logger {
 
 // WithDecisionID attaches a per-request decision-correlation ID (ULID-like
 // string; today UUIDv4) so every audit event emitted during this request
-// carries the same value. Boot prompt §4 Gap 4 — `decision_id` is the
+// carries the same value. `decision_id` is the
 // SOC analyst's grep handle for "everything that happened on one auth
 // decision."
 func WithDecisionID(ctx context.Context, id string) context.Context {

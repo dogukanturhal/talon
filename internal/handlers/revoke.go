@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package handlers — revoke.go is the streaming-revocation webhook
-// per ADR 0004 (Tier-1 Gap 2). Distinct from admin.go's
+// per ADR 0004. Distinct from admin.go's
 // `DELETE /admin/sessions/{sub}` which is the operator break-glass and
 // authenticates via session cookie + role.
 //
@@ -22,7 +22,7 @@
 // the `l5d-client-id` header as defence-in-depth and for audit
 // fidelity.
 //
-// Tier-1 Gap 4 SIEM-unification fields (`decision_id`, `source`) are
+// SIEM-unification fields (`decision_id`, `source`) are
 // optional in the request body and propagate end-to-end onto the
 // audit.Record so a SOC analyst can grep one ULID across Falco /
 // Wazuh / Talon / Falcon-ID logs.
@@ -48,7 +48,7 @@ import (
 //	  "session_ids":  ["<uuid>", ...],   // optional; empty = kick all sessions for sub
 //	  "decision_id":  "01HZ9D6VPK7XBQK3WZ7WQXDGAF",  // optional; ULID propagated
 //	                                                  // from the originating SIEM
-//	                                                  // event (Gap 4 unification).
+//	                                                  // event (SIEM unification).
 //	  "source":       "falcon-id" | "wazuh-ar" | "falco-talon" | "manual"
 //	                                                  // optional; semantic label
 //	                                                  // of the caller subsystem.
@@ -82,7 +82,7 @@ type revokeReq struct {
 	Reason     string   `json:"reason,omitempty"`
 	SessionIDs []string `json:"session_ids,omitempty"`
 	// DecisionID — optional ULID propagated from the originating SIEM
-	// event (boot prompt §6.6 Gap 4). When set, copied verbatim onto
+	// event. When set, copied verbatim onto
 	// the audit.Record.DecisionID for every revoked session so the
 	// admin.revoke events join the rest of the per-decision audit
 	// trail in Wazuh / Loki / Tempo. When unset, audit.Emit auto-

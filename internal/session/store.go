@@ -99,7 +99,7 @@ type Blob struct {
 	RefreshTokenEnc string `json:"refresh_token_enc,omitempty"`
 
 	// SSOChainID — per-session correlation handle that spans Talon ↔
-	// Falcon-ID ↔ upstream-app logs (boot prompt §4 Gap 4). Generated
+	// Falcon-ID ↔ upstream-app logs . Generated
 	// at /auth/start, persisted into the handshake state, materialised
 	// here on session create. omitempty keeps the on-disk shape backward
 	// compatible — old blobs decode with empty string and the audit

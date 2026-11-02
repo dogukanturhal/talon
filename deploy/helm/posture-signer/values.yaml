@@ -135,7 +135,7 @@ containerSecurityContext:
 
 # Linkerd mTLS inbound policy.
 # The Server CR is set to proxyProtocol: HTTP/1 (omit field — use default
-# auto-detect per internal engineering notes).
+# auto-detect; setting it explicitly breaks AuthorizationPolicy binding).
 # Allowed callers:
 #   - envoy-gateway-system/envoy-gateway (device-cert-terminated heartbeats
 #     forwarded from the Envoy Gateway data plane)

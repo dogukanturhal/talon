@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// evidence.go — `talon evidence` subcommand surface for the Tier-1 Gap 4
-// audit / compliance evidence chain. Boot prompt §4 Gap 4 calls out a
-// CLI shape:
+// evidence.go — `talon evidence` subcommand surface for the
+// audit / compliance evidence chain. The CLI shape is:
 //
 //	talon evidence export --since=YYYY-MM-DD --until=YYYY-MM-DD \
 //	                      --controls=CC6.6,CC6.1 \
@@ -103,7 +102,7 @@ type evidenceFlags struct {
 	ssoChainID  string
 	user        string
 	help        bool
-	// Tier-1 chain-of-custody (boot prompt §4 Gap 4):
+	// Chain-of-custody:
 	hmacKeyPath  string // file containing raw HMAC key bytes
 	manifestPath string // path to write the JSON manifest
 }

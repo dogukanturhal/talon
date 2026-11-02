@@ -196,7 +196,7 @@ func TestRevoke_AllowRate_DisabledByZero(t *testing.T) {
 
 func TestRevoke_BodySchema_DecisionIDAndSourceAreOptionalAndPreserved(t *testing.T) {
 	t.Parallel()
-	// Asserts the new Gap-4 fields parse without rejection. End-to-end
+	// Asserts the new SIEM-unification fields parse without rejection. End-to-end
 	// audit propagation rides the deferred Redis-backed integration MR.
 	body, err := json.Marshal(revokeReq{
 		Sub:        "01234567-89ab-cdef-0123-456789abcdef",

@@ -152,10 +152,9 @@ var ErrNoCredential = errors.New("credexchange: no per-host upstream credential"
 //
 // This mirrors the per-source-identity upstream-creds pattern in
 // Envoy ext_authz (allowed_upstream_headers + source-identity), NGINX
-// Plus `auth_jwt_claim_set`, and Pomerium per-route `from`/`to`. Was
-// the OSS gap caught live in the 2026-05-30 gitlab-bcl-receiver
-// Phase 5 migration (see
-// [[internal engineering notes]]).
+// Plus `auth_jwt_claim_set`, and Pomerium per-route `from`/`to`. This
+// gap in OSS gateways was caught live during the gitlab-bcl-receiver
+// migration.
 type Loader interface {
 	Load(ctx context.Context, host, clientID string) (Credential, error)
 }

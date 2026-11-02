@@ -1,12 +1,11 @@
 # ADR 0001 — Talon: architecture overview, NIST SP 800-207 mapping, and threat model
 
-- **Status:** Accepted
+- **Status:** Accepted (architecture locked 2026-04-26)
 - **Date:** 2026-04-26
 - **Deciders:** dogukanturhal (project owner)
 - **Supersedes:** N/A (first ADR)
 - **Superseded by:** N/A
 - **Related:**
-  - Options analysis behind the build-in-house decision (summarised in section 2)
   - ADR 0002 (planned) — cookie and session encoding details
   - ADR 0003 (planned) — TalonRoute CRD schema and conversion strategy
 
@@ -31,10 +30,9 @@ combination that triggers Mobile Safari's "is this a download?" heuristic. The
 admin tier is therefore unreachable from iPhone, which is the most common
 on-call device.
 
-The options analysis evaluated
-five paths: APISIX `openid-connect`, Authentik proxy provider, Authelia
+The options analysis evaluated five paths: APISIX `openid-connect`, Authentik proxy provider, Authelia
 forward-auth, fork-and-patch Pomerium, and an in-house IAP. Each was scored
-against the standing rules:
+against the project's non-negotiable rules:
 
 1. **No workarounds** — eliminates Traefik + oauth2-proxy ForwardAuth.
 2. **OSS-only** — eliminates Pomerium Enterprise, BeyondCorp, GCP IAP,
@@ -325,7 +323,7 @@ Three trust boundaries cross Talon:
 - **Argo CD deny-window.** Talon Application rolls under the same deny
   window as the rest of the platform. Manual Argo sync from inside the
   argocd-server pod is the documented break-glass
-  procedure.
+  (patching a stuck Argo CD operation with `kubectl` blocks the sync queue).
 - **Per-route blast radius.** A bad TalonRoute hits one host; Pomerium
   config errors today hit the whole admin tier. Net improvement.
 - **Continuous verification cadence (Phase 4) puts Falcon-ID under load.**
@@ -418,12 +416,9 @@ Three trust boundaries cross Talon:
 ### iOS Safari redirect-shape research
 
 - [WebKit Bugzilla — URL redirect category](https://bugs.webkit.org/show_bug.cgi?id=24175)
-- Live captured Pomerium 302 evidence —
-  the original options analysis
+- Live captured Pomerium 302 evidence (bare-anchor body, `nosniff`, cross-origin redirect chain)
 - Falcon-ID `writeOAuthHTMLRedirect` reference impl —
   `/home/dogukanturhal/projects/falcon-id/internal/handlers/oauth_provider_handler.go`
-
-
 
 ---
 

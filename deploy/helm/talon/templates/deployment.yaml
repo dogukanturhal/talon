@@ -54,8 +54,7 @@ spec:
   # was burning ~780m CPU continuously running the verify-talon-image-
   # provenance ClusterPolicy across all 11 RS in background. Dropping
   # to 2 cuts the scan workload ~80% AND keeps a working rollback
-  # target. Per CI standing decision (memory internal engineering notes
-  # tier1_2026_04_27), the active image's provenance is the only one
+  # target. Only the active image's provenance is the only one
   # required to be checked at admission; old RS attestations are
   # purely informational.
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit | default 2 }}
@@ -303,7 +302,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- /*
-                Streaming-revocation webhook (Tier-1 Gap 2 + Gap 4).
+                Streaming-revocation webhook (continuous verification + SIEM unification).
                 Empty allowedIdentities (chart default) leaves this env
                 unset; the Talon binary then logs
                 `streaming revocation webhook disabled` and returns 503

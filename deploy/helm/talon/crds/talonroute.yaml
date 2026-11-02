@@ -6,7 +6,7 @@
 # `clusters/prod-eu-west-1-hub/addons/talon-crds.yaml` in the
 # <gitops-bootstrap-repo> repo points at this directory and applies the
 # CRD with ServerSideApply=true at sync-wave -10 (before the
-# consumer `talon` Helm Application at wave 0). Schema additions in
+# consumer `talon` Helm Application, which needs the CRD to exist first). Schema additions in
 # a release flow through that path automatically; do NOT also
 # include CRDs in the consumer Application or Argo will surface
 # SharedResourceWarning on every reconcile.
@@ -317,7 +317,7 @@ spec:
                     PolicyRego is an opt-in OPA Rego module that runs AFTER the role
                     filter + SpiceDB CheckPermission both ALLOW. Rego can only NARROW
                     access — never broaden — so the upper layer must already allow
-                    before the module evaluates. Tier-1 Gap 5 escape hatch.
+                    before the module evaluates. This is the per-route Rego escape hatch.
 
                     The module must declare `package talon.route` and expose
                     `allow: bool`. Default semantics: `default allow := true` so an

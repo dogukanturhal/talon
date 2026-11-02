@@ -185,7 +185,7 @@ func (r *TalonRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	// Compile per-route Rego escape hatch (Tier-1 Gap 5) BEFORE
+	// Compile per-route Rego escape hatch BEFORE
 	// registering the upstream — a malformed module fails the route
 	// reconcile here rather than every in-flight request once the
 	// route is live. Empty PolicyRego returns (nil, nil); Router

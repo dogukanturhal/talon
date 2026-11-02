@@ -7,8 +7,7 @@
 // is consumed by router.Verify (Phase 7.3) to overlay per-path policy
 // on top of the host-default policy.
 //
-// 12-pitfall coverage (from docs/sessions/2026-06-01-talon-pathrules-
-// handoff-prompt.md):
+// 12-pitfall coverage :
 //
 //  1. Path normalization: percent-decode + collapse // + resolve .|..
 //     before matching. Mirrors Envoy's `normalize_path: true` +
