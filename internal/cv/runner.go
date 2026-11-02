@@ -14,7 +14,7 @@
 // with NeedLeaderElection=true so only one Talon pod polls at a time
 // (avoids N× IdP load + duplicated invalidations).
 //
-// Default cadence: 5 min (boot prompt §4 Gap 2 — matches Cloudflare
+// Default cadence: 5 min (matches Cloudflare
 // Access posture-check cadence). Tunable via TALON_CONTINUOUS_VERIFY_MINUTES;
 // per-route 1-min override (vault.ops, argocd.ops) is wired through
 // TalonRoute.spec.continuousVerifyMinutes by an inline-CV path. ADR 0001
@@ -22,7 +22,7 @@
 //
 // Phase 4.1 — proper OAuth refresh-token flow.
 // Phase 4.2 — role-loss check reads from access_token JWT (which
-// carries `roles` per internal engineering notes)
+// carries `roles`)
 // instead of /oauth/userinfo (which doesn't, per OIDC core §5.3).
 //
 // Per RFC 6749 §6 the only legal way to "validate" a refresh_token is
@@ -332,8 +332,7 @@ type tokenResponse struct {
 }
 
 // userInfoClaims captures the subset of /oauth/userinfo claims CV
-// cares about. Falcon-ID emits `roles` (internal engineering notes
-// delivered_2026_04_21) and a `disabled` boolean for inactive users.
+// cares about. Falcon-ID emits `roles` and a `disabled` boolean for inactive users.
 type userInfoClaims struct {
 	Sub      string   `json:"sub"`
 	Email    string   `json:"email"`

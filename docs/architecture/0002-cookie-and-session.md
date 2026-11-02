@@ -25,7 +25,7 @@ nonce, AAD on the wrong field, lost-update race on sliding refresh, or a
 key-rotation procedure that doesn't actually rotate. The Falcon-ID team
 has been bitten by RFC 6265 §5.3.6 (`Domain=` rejection) and
 `Set-Cookie` write-site splits already this quarter
-so the same class of bug
+(the IdP session cookie was written from two code paths); the same class of bug
 should not recur in Talon. This ADR is the contract a reviewer holds
 `internal/session/` against.
 
@@ -96,7 +96,7 @@ Set-Cookie: talon_session=<UUIDv4>; Domain=.internal.example.com; Path=/; Expire
 | `v` | int | Schema version (current: 1). Decoder rejects unknown versions; rotation procedure for v→v+1 documented in §6. | this ADR |
 | `sub` | UUID string | Falcon-ID `sub` claim; primary subject identifier. | id_token |
 | `email` | string | For audit logs and X-Talon-Email injection. | id_token (or /userinfo if missing) |
-| `groups` | array of string | For group-filter and SpiceDB user-group binding. | id_token `groups` claim |
+| `groups` | array of string | For group-filter and SpiceDB user-group binding. | id_token `groups` claim (delivered by Falcon-ID since 2026-04-21) |
 | `tenant_id` | UUID string | For multi-tenant routing if Talon ever fronts a per-tenant admin tier. | id_token `tenant_id` claim |
 | `iss` | string | Verify on read; rejects sessions issued by a non-canonical IdP. | id_token `iss` |
 | `amr` | array of string | For Phase 4 step-up MFA gating (`mfa` value present iff Falcon-ID asserted MFA). | id_token `amr` |

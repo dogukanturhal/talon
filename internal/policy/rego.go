@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package policy — rego.go is the Tier-1 Gap 5 escape hatch. After the
+// Package policy — rego.go is the per-route escape hatch. After the
 // role filter + SpiceDB CheckPermission both ALLOW, an operator can opt
 // a route into a Rego policy that NARROWS access further. Rego can only
 // narrow, never broaden — the upper layer must already allow before
@@ -21,8 +21,8 @@
 // portable to Cedar for the equivalence CI gate (separate MR).
 //
 // Pomerium ships PPL→Rego at the Enterprise tier; OSS Linkerd has no
-// equivalent. Talon shipping Rego at the OSS tier is the
-// boot-prompt-§4-Gap-5 differentiator.
+// equivalent. Talon shipping Rego at the OSS tier is a
+// differentiator.
 package policy
 
 import (

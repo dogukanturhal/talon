@@ -50,8 +50,7 @@ spec:
        cannot reach Talon from a non-Falcon-ID pod.
 
        Defaults to ENABLED because the public-URL path requires NAT
-       reflection on OPNsense which memory internal engineering notes
-       calls out as fragile. Disable only when intentionally routing
+       reflection on OPNsense, which is fragile. Disable only when intentionally routing
        through Traefik (the chart's traefik MTA above stays as the
        browser-path policy regardless).
 
@@ -89,7 +88,7 @@ spec:
     - group: policy.linkerd.io
       kind: MeshTLSAuthentication
       name: {{ include "talon.fullname" . }}-bcl-falcon-id
-{{- /* Memory internal engineering notes: edge-26.4.x
+{{- /* edge-26.4.x
        binding race makes single-codepath unsafe. Emit the legacy
        ServerAuthorization alongside so the policy lands regardless of
        which control-plane index serialises first. */}}
@@ -177,8 +176,7 @@ spec:
     - group: policy.linkerd.io
       kind: MeshTLSAuthentication
       name: {{ printf "%s-extauthz-%s-%s" (include "talon.fullname" $) $caller.namespace $caller.name }}
-{{- /* Memory internal engineering notes — emit the
-       legacy ServerAuthorization alongside so policy lands regardless
+{{- /* Emit the legacy ServerAuthorization alongside so policy lands regardless
        of which control-plane index serialises first. */}}
 ---
 apiVersion: policy.linkerd.io/v1beta1

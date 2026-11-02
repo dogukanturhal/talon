@@ -200,7 +200,7 @@ is identical to `net/http` semantics (RFC 6265).
 
 CheckResponses are NOT cached by Envoy's ext_authz filter by default,
 and we explicitly emit `Cache-Control: no-store` on deny responses
-to preserve the session-revocation invariant (ADR 0001 §7.b:
+to preserve the session-revocation invariant (ADR 0001 §7.b / ADR 0004
 streaming revocation cascade).
 
 ## 8. Coexistence with HTTP `/auth/verify`

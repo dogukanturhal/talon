@@ -31,8 +31,8 @@ type Metrics struct {
 	OIDCHandshake   *prometheus.CounterVec
 	UpstreamLatency *prometheus.HistogramVec
 
-	// DecisionCache tracks the SpiceDB decision-cache hit ratio (boot
-	// prompt §4 Gap 6 acceptance metric). Labels:
+	// DecisionCache tracks the SpiceDB decision-cache hit ratio (performance
+	// acceptance metric). Labels:
 	//   result=hit              — cache served the answer
 	//   result=miss              — cache forwarded to SpiceDB
 	//   result=invalidate_subject — N entries dropped by revoke fan-out
@@ -59,7 +59,7 @@ type Metrics struct {
 	// EdgeRevokeBlock counts incoming requests blocked at Talon's edge
 	// because the cookie's session is on a tombstone (talon:revoked:<cookieID>).
 	// Tombstones are written by the BCL/FCL receivers when Falcon-ID
-	// fans out a Sign Out via the revoke-by-sub / revoke-by-sid index
+	// fans out a Sign Out via the revoke-by-sub / revoke-by-sid index.
 	//
 	// Labels:
 	//   route — request host (e.g., "grafana.internal.example.com")

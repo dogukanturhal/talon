@@ -5,9 +5,8 @@
 // Adds the `s3://[endpoint/]bucket/key` URL scheme to the file argument
 // list. When detected, the URL is fetched via the MinIO Go SDK and the
 // object body is streamed to the existing NDJSON parser. Designed for
-// the audit-archive MinIO tenant (internal engineering notes:
-// "WORM audit retention = 7 years, dedicated audit-archive MinIO with
-// object-lock governance").
+// the audit-archive MinIO tenant (WORM audit retention = 7 years, dedicated audit-archive MinIO
+// with object-lock governance).
 //
 // URL forms supported:
 //   - s3://bucket/key                   — uses default endpoint from env

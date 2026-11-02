@@ -165,7 +165,7 @@ type TalonRouteSpec struct {
 	// PolicyRego is an opt-in OPA Rego module that runs AFTER the role
 	// filter + SpiceDB CheckPermission both ALLOW. Rego can only NARROW
 	// access — never broaden — so the upper layer must already allow
-	// before the module evaluates. Tier-1 Gap 5 escape hatch.
+	// before the module evaluates. This is the per-route Rego escape hatch.
 	//
 	// The module must declare `package talon.route` and expose
 	// `allow: bool`. Default semantics: `default allow := true` so an

@@ -227,7 +227,7 @@ func BuildRFC9470Challenge(acrValues []string, mfaRequired bool, maxAgeSec int) 
 // does NOT trust it blindly: the IdP's ACR gate accepts any MFA factor, so the
 // callback only refreshes Blob.LastWebAuthnAt when the new id_token's amr
 // actually carries a hardware/software-key factor (hardwareFactorAuthTime).
-const passkeyStepUpACR = "urn:hexxlock:aal3" //nolint:gosec // ACR URN, not a credential
+const passkeyStepUpACR = "urn:hexxlock:aal3" //nolint:gosec // G101 false positive: public OIDC acr_values identifier, not a credential
 
 // passkeyStepUpLoopGuardSec bounds how long after a passkey step-up round
 // trip a still-stale passkey time is treated as "the step-up just ran and did

@@ -384,12 +384,12 @@ func (r *Router) SetIAPSigner(signer *identityjwt.Signer) {
 // RegisterUpstream maps a host header to a proxy handler. Permission is
 // the SpiceDB relation name (viewer|editor|admin) — empty string means
 // the role filter is the only gate (Phase 1 fallback). MfaRequired
-// triggers step-up MFA per ADR 0001 §6 / boot prompt §4. ContinuousVerifyMinutes
+// triggers step-up MFA per ADR 0001 §6. ContinuousVerifyMinutes
 // (0 = cluster default) drives the per-route inline CV check; values
 // less than the global runner's Interval activate the inline path.
 // Rego is the compiled per-route Rego escape hatch — nil = no
 // narrowing; non-nil = evaluate after CompositePolicy.Allow, deny on
-// false return (Tier-1 Gap 5).
+// false return.
 //
 // The Phase 4 per-host session-control fields (SessionAbsoluteSec,
 // SessionIdleSec, ReauthOnNetworkChange, RequireDeviceClaims, AuditOnly)
@@ -527,8 +527,7 @@ func (r *Router) UnregisterUpstream(host string) {
 
 // ServeHTTP routes the request.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// talon_request_total wiring (audit internal engineering notes
-	// oidc_handshake_never_incremented_2026_05_30) — wrap the writer so
+	// talon_request_total wiring — wrap the writer so
 	// the final status can be observed, and emit RequestTotal on
 	// function exit. SLO alerts (TalonSLOFastBurn/SlowBurn,
 	// TalonUpstreamErrorRate) depend on this single emit. The
@@ -556,7 +555,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		).Inc()
 	}()
 
-	// Per-request decision_id (boot prompt §4 Gap 4) — populated on every
+	// Per-request decision_id — populated on every
 	// audit event emitted during this request via tlog.DecisionIDFrom in
 	// audit.Emitter. UUIDv4 because the existing import set already has it;
 	// monotonic ULIDs would be nicer for sort-by-time but the audit pipeline
@@ -606,7 +605,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// `/auth/verify` freely on their own hostnames; Talon falls through
 	// to the proxy upstream below.
 	//
-	// `/auth/verify` is the forward-auth subrequest endpoint (Gap 7).
+	// `/auth/verify` is the forward-auth subrequest endpoint.
 	// External proxies (APISIX, etc.) call `<auth-host>/auth/verify`
 	// explicitly, never a protected host, so it's grouped here.
 	if req.Host == r.cfg.ExternalURL.Hostname() {
@@ -702,7 +701,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// from Falcon-ID. The JWT authenticates per spec §2.6;
 			// Linkerd MTA + AuthorizationPolicy at the platform layer
 			// add defense-in-depth. Auth-host-scoped to avoid colliding
-			// with downstream RPs that ship their own /auth/* handlers
+			// with downstream RPs that ship their own /auth/* handlers.
 			if r.backchannelLogout != nil {
 				r.backchannelLogout.ServeHTTP(w, req)
 				return
@@ -1011,7 +1010,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Promote the session's SSO chain ID into the request ctx so any
 	// audit event emitted further down (deny, MFA challenge, allow,
 	// inline CV invalidate) carries it without each callsite needing
-	// to know about Blob.SSOChainID. Boot prompt §4 Gap 4.
+	// to know about Blob.SSOChainID.
 	if blob.SSOChainID != "" {
 		ctx = tlog.WithSSOChainID(req.Context(), blob.SSOChainID)
 		req = req.WithContext(ctx)
@@ -1152,7 +1151,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Per-route Rego escape hatch (Tier-1 Gap 5). Runs ONLY after the
+	// Per-route Rego escape hatch. Runs ONLY after the
 	// composite policy ALLOWs, so Rego can narrow but never broaden.
 	// ZTNA baseline: prefer the route's own Rego; otherwise fall back to
 	// the global default (SetDefaultPolicyRego) so device posture is
@@ -1450,7 +1449,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Step-up gate per ADR 0001 §6 / boot prompt §4. The check follows
+	// Step-up gate per ADR 0001 §6. The check follows
 	// the RFC 8176 §1-recommended layering — acr first (stable LoA
 	// reference), permissive amr fallback otherwise. See
 	// internal/router/stepup.go for the decision table.
@@ -1668,7 +1667,7 @@ func isXHROrAssetRequest(req *http.Request) bool {
 // (APISIX forward-auth plugin sets this); req.Host is the Talon Service's
 // own DNS name on the cluster-internal mTLS hop. Cache-Control: no-store
 // on every response — APISIX caches by default and a 200 cached after
-// session revocation would defeat the gap-2 streaming-revocation point.
+// session revocation would defeat streaming revocation.
 func (r *Router) serveAuthVerify(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 

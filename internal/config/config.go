@@ -191,7 +191,7 @@ type Config struct {
 	ContinuousVerifyInterval time.Duration
 
 	// RevokeWebhookAllowedIdentities is the SPIFFE-style Linkerd
-	// identity allow-list for POST /admin/revoke (Tier-1 Gap 2 streaming
+	// identity allow-list for POST /admin/revoke (streaming
 	// revocation). Empty list disables the endpoint. Loaded from
 	// TALON_REVOKE_WEBHOOK_ALLOWED_IDENTITIES (comma-separated).
 	RevokeWebhookAllowedIdentities []string
@@ -724,8 +724,8 @@ func Load() (*Config, error) {
 
 	c.SessionHardTTL = parseDurationSeconds("TALON_SESSION_TTL_SECONDS", 8*time.Hour)
 	c.SessionRefreshMin = parseDurationSeconds("TALON_SESSION_REFRESH_SECONDS", 60*time.Second)
-	// Default 5 min matches Cloudflare Access posture-check cadence
-	// (boot prompt §4 Gap 2). Tunable via env; per-route override via
+	// Default 5 min matches Cloudflare Access posture-check cadence.
+	// Tunable via env; per-route override via
 	// TalonRoute.spec.continuousVerifyMinutes is plumbed separately.
 	c.ContinuousVerifyInterval = parseDurationMinutes("TALON_CONTINUOUS_VERIFY_MINUTES", 5*time.Minute)
 

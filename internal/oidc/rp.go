@@ -196,7 +196,7 @@ func (r *RP) HandleStart(w http.ResponseWriter, req *http.Request) {
 	nonce := randURLSafe(16)
 	// SSO chain ID — generated once at /auth/start, materialised onto
 	// the session blob in HandleCallback, replayed onto every audit
-	// event for the session's lifetime. Boot prompt §4 Gap 4.
+	// event for the session's lifetime.
 	ssoChainID := randURLSafe(16)
 	hs := &session.HandshakeState{
 		CodeVerifier: verifier,
@@ -656,8 +656,8 @@ func (r *RP) HandleLogout(w http.ResponseWriter, req *http.Request) {
 			// Falcon-ID treats id_token_hint as optional but uses it to
 			// scope the logout to a specific session if present. We don't
 			// have the full id_token (Talon doesn't store it — only the
-			// jti), but Falcon-ID accepts the jti as a hint per migration
-			// 213.
+			// jti), but Falcon-ID accepts the jti as a hint per Falcon-ID
+			// migration 213.
 			q.Set("id_token_hint", idTokenJTI)
 		}
 		dest = r.endSessionEndpoint + "?" + q.Encode()

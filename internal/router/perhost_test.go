@@ -100,7 +100,7 @@ func TestEvaluatePerHost_AbsoluteTTL_Within(t *testing.T) {
 
 // TestEvaluatePerHost_AbsoluteTTL_Exceeded — session aged past the cap
 // must deny with ReasonPerHostExpired regardless of activity. Tests the
-// "argocd 1h" matrix entry from the handoff TTL table.
+// "argocd 1h" matrix entry (Argo CD gets a 1h absolute TTL).
 func TestEvaluatePerHost_AbsoluteTTL_Exceeded(t *testing.T) {
 	t.Parallel()
 	entry := upstreamEntry{sessionAbsoluteSec: 3600} // 1h

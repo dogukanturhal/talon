@@ -122,7 +122,7 @@ RegoInputUser.Posture pending — separate commit).
 ### Positive
 
 - Real-time session revocation across the federation; closes the
-  stolen-cookie-until-TTL hole identified as the #1 tier-1 gap.
+  stolen-cookie-until-TTL hole identified as the top gap.
 - Device-trust enforcement at the IAP layer; HexxLock no longer
   trusts "valid OIDC cookie" as the sole admission control on
   admin-tier hosts.

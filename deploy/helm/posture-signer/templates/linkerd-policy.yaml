@@ -2,7 +2,7 @@
 {{- /*
   Linkerd inbound policy for posture-signer :8080.
 
-  Architecture note (ADR 0040 D-003, memory internal engineering notes):
+  Architecture note (ADR 0040 D-003):
   - proxyProtocol field is OMITTED (not set to HTTP/1). Setting it
     explicitly breaks AuthorizationPolicy binding for meshed mTLS clients.
     The auto-detect behaviour (default when the field is absent) correctly
@@ -59,7 +59,7 @@ spec:
       kind: MeshTLSAuthentication
       name: {{ printf "%s-%s-%s" (include "posture-signer.fullname" $) $caller.namespace $caller.name }}
 ---
-{{- /* Dual-codepath ServerAuthorization per internal engineering notes */}}
+{{- /* Dual-codepath ServerAuthorization: emitted alongside the AuthorizationPolicy. */}}
 apiVersion: policy.linkerd.io/v1beta1
 kind: ServerAuthorization
 metadata:

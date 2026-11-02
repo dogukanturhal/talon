@@ -35,10 +35,10 @@ revisionHistoryLimit: 2
 podAnnotations:
   linkerd.io/inject: enabled
   # No config.linkerd.io/proxy-version pin — OSS Linkerd has no stable
-  # past 2.14.10, so
+  # past 2.14.10 so
   # the cluster's installed edge-* flows by default.
-  # Don't enable opaque-port skip without a Server CR — see
-  # internal engineering notes
+  # Don't enable opaque-port skip without a Server CR — skipping outbound
+  # ports bypasses the mesh.
   #
   # `linkerd-await` init container — kubelet blocks the main `talon`
   # container from starting until the linkerd-proxy reports ready
@@ -254,7 +254,7 @@ config:
 
   # ─────────────────────────────────────────────────────────────────
   # Streaming-revocation webhook — POST /admin/revoke
-  # (Tier-1 Gap 2 + Gap 4 SIEM unification).
+  # (streaming revocation + SIEM unification).
   #
   # Empty allowedIdentities = endpoint disabled (returns 503).
   # The list is the full Linkerd SPIFFE identity of every caller
@@ -461,7 +461,7 @@ ingress:
   ingressClassName: traefik-internal
   # TLS via cert-manager wildcard cluster issuer; Secret co-located with each
   # IngressRoute namespace if traefik-multi-instance picks the wrong LB
-  #.
+  # (TLSStore is scoped per namespace).
   tlsSecretName: internal-example-com-tls
 
 # ---------------------------------------------------------------------------
@@ -565,7 +565,7 @@ backchannelLogout:
   # https://talon-talon.talon.svc:8443/auth/backchannel-logout directly
   # over Linkerd mTLS, in addition to the public-URL path through
   # traefik-internal. Direct path is more reliable than NAT reflection
-  # for in-cluster delivery.
+  # for in-cluster delivery (OPNsense NAT reflection is fragile).
   directMeshAllow:
     enabled: true
     callerServiceAccount:

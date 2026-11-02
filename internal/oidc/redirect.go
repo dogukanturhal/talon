@@ -3,8 +3,7 @@
 // Package oidc — redirect.go ports Falcon-ID's writeOAuthHTMLRedirect to
 // Go's net/http for Talon. Every cross-origin 302 in the auth dance must
 // emit a fully HTML-scaffolded body to avoid the iOS WebKit "is this a
-// download?" heuristic. See ADR 0001 §5.d and HANDOFF_TIER1_OPS_IAP_REPLACEMENT_PROMPT.md
-// "What broke and why" for the trigger conditions.
+// download?" heuristic. See ADR 0001 §5.d.
 package oidc
 
 import (

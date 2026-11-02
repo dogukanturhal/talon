@@ -10,8 +10,8 @@
 //
 // Subject index: every (host, subject, perm) entry is also indexed by
 // subject so revocation can flush every active entry for a single user
-// in one call (boot prompt §4 Gap 6 — decision cache must be
-// invalidated by the Gap-2 streaming revocation webhook + the existing
+// in one call (the decision cache must be
+// invalidated by the streaming revocation webhook + the existing
 // session.Revoke path). The subject is the OIDC sub claim, ID-stable
 // across sessions.
 package spicedb

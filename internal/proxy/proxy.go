@@ -323,7 +323,7 @@ func injectIdentityHeaders(req *http.Request, b *session.Blob) {
 	// Cross-system correlation handle. Upstream apps that emit their own
 	// audit log should echo this into their event records so the SOC
 	// analyst can grep one ID across Talon, Falcon-ID and the upstream's
-	// log streams. Boot prompt §4 Gap 4.
+	// log streams.
 	if b.SSOChainID != "" {
 		req.Header.Set("X-Talon-Sso-Chain-Id", b.SSOChainID)
 	}

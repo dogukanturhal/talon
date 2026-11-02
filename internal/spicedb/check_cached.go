@@ -16,7 +16,7 @@ import (
 )
 
 // CacheMetrics is the optional metric sink CachedClient calls per Check
-// to expose hit / miss / invalidate counts (boot prompt §4 Gap 6 —
+// to expose hit / miss / invalidate counts (feeds
 // `talon_decision_cache_hit_ratio`). Wired by the binary at startup;
 // nil here keeps the package import-cycle-free and lets unit tests
 // run without a Prometheus registry.

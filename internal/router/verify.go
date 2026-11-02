@@ -417,7 +417,7 @@ func overlayUpstreamPolicy(up upstreamEntry, p v1beta1.Policy) upstreamEntry {
 		// AllowedGroups is consulted by policy.Composite.Evaluate via
 		// the SpiceDB role-to-group mapping. The overlay replaces (not
 		// adds) the group list — matches the YAML-overlay intent in
-		// the handoff doc ("fields set on the rule override the
+		// the design ("fields set on the rule override the
 		// default"). To inherit, simply don't set the field.
 		_ = p.AllowedGroups // groups flow through pe.Evaluate via blob.Groups; overlay shape TBD in Phase 7.3.b
 	}
