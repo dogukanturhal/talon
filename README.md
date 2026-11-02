@@ -1,13 +1,27 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/media/logo-light.svg">
+    <img alt="Talon" src="docs/media/logo-light.svg" height="140">
+  </picture>
+</p>
+
 # Talon
+
+**An identity-aware reverse proxy for Kubernetes: OIDC login plus a SpiceDB check on every request to an internal app.**
 
 [![CI](https://github.com/dogukanturhal/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dogukanturhal/talon/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/dogukanturhal/talon.svg)](https://pkg.go.dev/github.com/dogukanturhal/talon)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/dogukanturhal/talon/badge)](https://securityscorecards.dev/viewer/?uri=github.com/dogukanturhal/talon)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dogukanturhal/talon/badge)](https://scorecard.dev/viewer/?uri=github.com/dogukanturhal/talon)
 
-An identity-aware reverse proxy that signs users in through OIDC and decides
-per request, with SpiceDB relationships, whether they may reach an internal
-app.
+**Status:** pre-1.0, not independently audited, runs in production in front of the author's own internal tier.
+
+[Quickstart](#quickstart-about-five-minutes) · [Docs](docs/architecture) · [Architecture](#architecture) · [Security](#security) · [Contributing](#contributing)
+
+Talon signs users in through OIDC and decides per request, with SpiceDB
+relationships, whether they may reach an internal app. Questions and ideas:
+[GitHub Discussions](https://github.com/dogukanturhal/talon/discussions).
 
 ## Who it is for
 
@@ -18,10 +32,6 @@ Talon is the policy enforcement point (PEP), `internal/policy` is the policy
 engine (PE), and the OIDC relying party plus the TalonRoute reconciler are the
 policy administrator (PA).
 
-It runs in production in front of the author's own internal tier. It has not
-been through a third-party audit and it is pre-1.0 (see
-[Status and limitations](#status-and-limitations)).
-
 ## Features
 
 Each item below exists in this repository. Paths point at the code.
@@ -30,10 +40,11 @@ Each item below exists in this repository. Paths point at the code.
   provider advertises it, pushed authorization requests. Sessions are an opaque
   cookie id; the session blob lives in Redis, AES-GCM encrypted
   (`internal/oidc`, `internal/session`).
-- **Route policy as Kubernetes resources.** `TalonRoute` (`v1alpha1`, `v1beta1`
-  with a conversion webhook) declares host, upstream, allowed groups and
-  subjects, MFA/ACR requirements, session TTLs, per-path rules and public
-  paths (`api/`, `internal/controller`, `deploy/helm/talon/crds`).
+- **Route policy as Kubernetes resources.** `TalonRoute` (API group
+  `gateway.talon.example.com`, versions `v1alpha1` and `v1beta1` with a
+  conversion webhook) declares host, upstream, allowed groups and subjects,
+  MFA/ACR requirements, session TTLs, per-path rules and public paths
+  (`api/`, `internal/controller`, `deploy/helm/talon/crds`).
 - **Relationship-based authorization.** Each request is checked against
   SpiceDB (`talon_route#access`), with a short-lived cache and a signed
   offline decision window for SpiceDB outages (`internal/spicedb`).
@@ -105,6 +116,25 @@ setting and what to do when a step fails. For Kubernetes, `deploy/helm/talon`
 is the chart used by the author; see the limitations below before relying on
 it.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  B[Browser or talonctl] -->|cookie or bearer| T[Talon<br/>PEP + decision code]
+  E[Envoy or other proxy] -->|ext_authz or /auth/verify| T
+  T -->|code flow + PKCE| O[OIDC provider]
+  T -->|sessions| R[(Redis)]
+  T -->|CheckPermission| S[(SpiceDB)]
+  T -.->|optional Rego| P[Policy module]
+  T -->|X-Talon-* headers, optional identity JWT| U[Upstream app]
+  K[TalonRoute resources] --> C[Controller]
+  C -->|route table, relationships| T
+  PS[posture-signer] -.->|signed posture assertions| T
+```
+
+Design records are in [`docs/architecture`](docs/architecture), starting with
+`0001-overview.md`.
+
 ## How it compares
 
 These tools overlap with Talon but are aimed at different setups.
@@ -119,34 +149,17 @@ These tools overlap with Talon but are aimed at different setups.
   identity upstream, usually with allow-lists of emails or groups. It is small
   and widely deployed. It has no per-route relationship checks, device posture
   or continuous verification.
+- **Teleport** is an access platform for SSH, Kubernetes, databases and web
+  apps, with its own certificate authority, session recording and a device
+  trust feature. Talon's `access-broker` covers a narrower part of that and
+  needs a separate credential backend. If SSH or database access is the main
+  need, Teleport is the more complete product.
 - **Cloudflare Access** is a hosted service with its own network and device
   agent. Talon is self-hosted and does not ship a device agent; it consumes
   posture assertions produced elsewhere.
 - **Authelia** is a self-hosted sign-on portal with a local user store, 2FA
   and forward-auth for nginx, Traefik or Envoy. Talon does not store users or
   credentials; it relies on an external OIDC provider.
-
-## Architecture
-
-```
-                         +----------------+
-   browser / CLI ------> |     Talon      | ---- OIDC code flow + PKCE ----> OIDC provider
-   (cookie or bearer)    |   (PEP + PE)   |
-                         |                | ---- sessions -----------------> Redis
-                         |                | ---- CheckPermission -----------> SpiceDB
-                         |                | ---- Rego (optional) -----------> in-process
-                         +-------+--------+
-                                 |  X-Talon-* headers, optional signed identity JWT
-                                 v
-                           upstream app
-
-   TalonRoute resources --> controller (PA) --> route table + SpiceDB relationships
-   Envoy / other proxies --> ext_authz gRPC or /auth/verify --> same decision code
-   posture-signer --> signed posture assertions --> Talon (optional)
-```
-
-Design records are in [`docs/architecture`](docs/architecture), starting with
-`0001-overview.md`.
 
 ## Status and limitations
 
@@ -179,11 +192,17 @@ Design records are in [`docs/architecture`](docs/architecture), starting with
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Commits need a DCO sign-off.
 Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Questions go to [GitHub Discussions](https://github.com/dogukanturhal/talon/discussions);
+bugs and feature requests to [issues](https://github.com/dogukanturhal/talon/issues).
+
+## Security
+
+Report vulnerabilities privately through
+[GitHub private vulnerability reporting](https://github.com/dogukanturhal/talon/security/advisories/new),
+or by email to dogukanturhal@hexxlock.com if you cannot use GitHub. Do not open
+a public issue. See [SECURITY.md](SECURITY.md) for scope and the disclosure
+timeline.
 
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
-
-## Security
-
-Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
