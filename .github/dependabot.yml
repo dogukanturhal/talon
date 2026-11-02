@@ -1,27 +1,55 @@
+# This repository is generated from an upstream source; dependency bumps are applied
+# upstream and arrive via sync. Grouped monthly PRs here are signals, not merge targets.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
-      kubernetes:
-        patterns: ["k8s.io/*", "sigs.k8s.io/*"]
-      opentelemetry:
-        patterns: ["go.opentelemetry.io/*"]
-    open-pull-requests-limit: 10
+      all:
+        applies-to: version-updates
+        patterns: ["*"]
+      all-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 2
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ["*"]
+      all-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 2
 
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ["*"]
+      all-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 2
 
   - package-ecosystem: docker
     directory: /examples/quickstart
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ["*"]
+      all-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 2
